@@ -7,7 +7,7 @@ import { initializeCosmosDB } from "./lib/cosmosDB.js";
 import { initializeBlobStorage } from "./lib/blobStorage.js";
 
 // Factory function to create the Express app
-export async function createApp() {
+export function createApp() {
   const app = express();
 
   // Middleware (increase payload limits for chat history and chart data)
@@ -24,30 +24,26 @@ export async function createApp() {
     res.json({ status: 'OK', message: 'Server is running' });
   });
 
-  // Initialize services
-  try {
-    // Initialize CosmosDB (optional)
-    try {
-      await initializeCosmosDB();
-    } catch (cosmosError) {
-      const errorMessage = cosmosError instanceof Error ? cosmosError.message : String(cosmosError);
+  // Register all routes (synchronous)
+  // Routes are registered immediately, services initialize in background
+  registerRoutes(app).catch((error) => {
+    console.error("Failed to register routes:", error);
+  });
+
+  // Initialize optional services in background (non-blocking)
+  // These are optional, so we don't wait for them
+  Promise.all([
+    initializeCosmosDB().catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn("⚠️ CosmosDB initialization failed, continuing without it:", errorMessage);
-    }
-    
-    // Initialize Azure Blob Storage (optional)
-    try {
-      await initializeBlobStorage();
-    } catch (blobError) {
-      const errorMessage = blobError instanceof Error ? blobError.message : String(blobError);
+    }),
+    initializeBlobStorage().catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn("⚠️ Azure Blob Storage initialization failed, continuing without it:", errorMessage);
-    }
-    
-    // Register all routes
-    await registerRoutes(app);
-  } catch (error) {
-    console.error("Failed to initialize services:", error);
-    // Don't throw - allow app to start even if some services fail
-  }
+    })
+  ]).catch(() => {
+    // Ignore - services are optional
+  });
 
   return app;
 }
