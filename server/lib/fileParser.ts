@@ -22,7 +22,9 @@ function parseCsv(buffer: Buffer): Record<string, any>[] {
     cast: true,
     cast_date: true,
   });
-  return records as Record<string, any>[];
+  
+  // Normalize column names: trim whitespace from all column names
+  return normalizeColumnNames(records as Record<string, any>[]);
 }
 
 function parseExcel(buffer: Buffer): Record<string, any>[] {
@@ -30,7 +32,45 @@ function parseExcel(buffer: Buffer): Record<string, any>[] {
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: null });
-  return data as Record<string, any>[];
+  
+  // Normalize column names: trim whitespace from all column names
+  return normalizeColumnNames(data as Record<string, any>[]);
+}
+
+/**
+ * Normalizes column names by trimming whitespace from all keys
+ * This ensures consistent column name handling throughout the application
+ */
+function normalizeColumnNames(data: Record<string, any>[]): Record<string, any>[] {
+  if (!data || data.length === 0) {
+    return data;
+  }
+  
+  // Create a mapping of old column names to normalized (trimmed) names
+  const firstRow = data[0];
+  const columnMapping: Record<string, string> = {};
+  
+  for (const oldKey of Object.keys(firstRow)) {
+    const normalizedKey = oldKey.trim();
+    if (oldKey !== normalizedKey) {
+      columnMapping[oldKey] = normalizedKey;
+    }
+  }
+  
+  // If no normalization needed, return as-is
+  if (Object.keys(columnMapping).length === 0) {
+    return data;
+  }
+  
+  // Remap all rows to use normalized column names
+  return data.map(row => {
+    const normalizedRow: Record<string, any> = {};
+    for (const [oldKey, value] of Object.entries(row)) {
+      const newKey = columnMapping[oldKey] || oldKey.trim();
+      normalizedRow[newKey] = value;
+    }
+    return normalizedRow;
+  });
 }
 
 export function createDataSummary(data: Record<string, any>[]): DataSummary {
