@@ -3,8 +3,6 @@ import 'dotenv/config';
 import express from "express";
 import { corsConfig } from "./middleware/index.js";
 import { registerRoutes } from "./routes/index.js";
-import { initializeCosmosDB } from "./lib/cosmosDB.js";
-import { initializeBlobStorage } from "./lib/blobStorage.js";
 
 // Factory function to create the Express app
 export function createApp() {
@@ -29,12 +27,13 @@ export function createApp() {
 
   // Initialize optional services in background (non-blocking)
   // These are optional, so we don't wait for them
+  // Use dynamic imports to avoid breaking if packages aren't available
   Promise.all([
-    initializeCosmosDB().catch((error) => {
+    import("./lib/cosmosDB.js").then(m => m.initializeCosmosDB()).catch((error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn("⚠️ CosmosDB initialization failed, continuing without it:", errorMessage);
     }),
-    initializeBlobStorage().catch((error) => {
+    import("./lib/blobStorage.js").then(m => m.initializeBlobStorage()).catch((error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.warn("⚠️ Azure Blob Storage initialization failed, continuing without it:", errorMessage);
     })
