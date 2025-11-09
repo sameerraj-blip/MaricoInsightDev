@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChartSpec, Dashboard as ServerDashboard } from '@shared/schema';
 import { dashboardsApi } from '@/lib/api';
 
@@ -10,77 +11,124 @@ export interface DashboardData {
   updatedAt: Date;
 }
 
+const normalizeDashboard = (dashboard: ServerDashboard): DashboardData => ({
+  id: dashboard.id,
+  name: dashboard.name,
+  charts: dashboard.charts || [],
+  createdAt: new Date(dashboard.createdAt),
+  updatedAt: new Date(dashboard.updatedAt),
+});
+
 export const useDashboardState = () => {
-  const [dashboards, setDashboards] = useState<DashboardData[]>([]);
+  const queryClient = useQueryClient();
   const [currentDashboard, setCurrentDashboard] = useState<DashboardData | null>(null);
 
-  // Load dashboards from backend on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await dashboardsApi.list();
-        const normalized = res.dashboards.map((d: ServerDashboard) => ({
-          id: d.id,
-          name: d.name,
-          charts: d.charts || [],
-          createdAt: new Date(d.createdAt),
-          updatedAt: new Date(d.updatedAt),
-        }));
-        setDashboards(normalized);
-      } catch (error) {
-        console.error('Error loading dashboards from backend:', error);
-      }
-    })();
-  }, []);
+  const {
+    data: dashboards = [],
+    isFetching,
+    isLoading,
+    refetch,
+    error,
+  } = useQuery({
+    queryKey: ['dashboards', 'list'],
+    queryFn: async () => {
+      const res = await dashboardsApi.list();
+      return res.dashboards.map(normalizeDashboard);
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
-  const createDashboard = async (name: string): Promise<DashboardData> => {
-    const created = await dashboardsApi.create(name);
-    const normalized: DashboardData = {
-      id: created.id,
-      name: created.name,
-      charts: created.charts || [],
-      createdAt: new Date(created.createdAt),
-      updatedAt: new Date(created.updatedAt),
-    };
-    setDashboards(prev => [...prev, normalized]);
-    return normalized;
-  };
+  const createDashboardMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const created = await dashboardsApi.create(name);
+      return normalizeDashboard(created);
+    },
+    onSuccess: (createdDashboard) => {
+      queryClient.setQueryData<DashboardData[]>(['dashboards', 'list'], (prev) => {
+        const existing = prev ?? [];
+        return [...existing, createdDashboard];
+      });
+      setCurrentDashboard(createdDashboard);
+    },
+  });
 
-  const addChartToDashboard = async (dashboardId: string, chart: ChartSpec) => {
-    const updated = await dashboardsApi.addChart(dashboardId, chart);
-    const normalized: DashboardData = {
-      id: updated.id,
-      name: updated.name,
-      charts: updated.charts || [],
-      createdAt: new Date(updated.createdAt),
-      updatedAt: new Date(updated.updatedAt),
-    };
-    setDashboards(prev => prev.map(d => d.id === dashboardId ? normalized : d));
-  };
+  const addChartMutation = useMutation({
+    mutationFn: async ({ dashboardId, chart }: { dashboardId: string; chart: ChartSpec }) => {
+      const updated = await dashboardsApi.addChart(dashboardId, chart);
+      return normalizeDashboard(updated);
+    },
+    onSuccess: (updatedDashboard) => {
+      queryClient.setQueryData<DashboardData[]>(['dashboards', 'list'], (prev) => {
+        if (!prev) return [updatedDashboard];
+        return prev.map((dashboard) => (dashboard.id === updatedDashboard.id ? updatedDashboard : dashboard));
+      });
+      setCurrentDashboard((prev) => (prev?.id === updatedDashboard.id ? updatedDashboard : prev));
+    },
+  });
 
-  const removeChartFromDashboard = async (dashboardId: string, chartIndex: number) => {
-    const updated = await dashboardsApi.removeChart(dashboardId, { index: chartIndex });
-    const normalized: DashboardData = {
-      id: updated.id,
-      name: updated.name,
-      charts: updated.charts || [],
-      createdAt: new Date(updated.createdAt),
-      updatedAt: new Date(updated.updatedAt),
-    };
-    setDashboards(prev => prev.map(d => d.id === dashboardId ? normalized : d));
-  };
+  const removeChartMutation = useMutation({
+    mutationFn: async ({ dashboardId, chartIndex }: { dashboardId: string; chartIndex: number }) => {
+      const updated = await dashboardsApi.removeChart(dashboardId, { index: chartIndex });
+      return normalizeDashboard(updated);
+    },
+    onSuccess: (updatedDashboard) => {
+      queryClient.setQueryData<DashboardData[]>(['dashboards', 'list'], (prev) => {
+        if (!prev) return [updatedDashboard];
+        return prev.map((dashboard) => (dashboard.id === updatedDashboard.id ? updatedDashboard : dashboard));
+      });
+      setCurrentDashboard((prev) => (prev?.id === updatedDashboard.id ? updatedDashboard : prev));
+    },
+  });
 
-  const deleteDashboard = async (dashboardId: string) => {
-    await dashboardsApi.remove(dashboardId);
-    setDashboards(prev => prev.filter(dashboard => dashboard.id !== dashboardId));
-    if (currentDashboard?.id === dashboardId) {
-      setCurrentDashboard(null);
-    }
-  };
+  const deleteDashboardMutation = useMutation({
+    mutationFn: async (dashboardId: string) => {
+      await dashboardsApi.remove(dashboardId);
+      return dashboardId;
+    },
+    onSuccess: (dashboardId) => {
+      queryClient.setQueryData<DashboardData[]>(['dashboards', 'list'], (prev) =>
+        (prev ?? []).filter((dashboard) => dashboard.id !== dashboardId)
+      );
+      setCurrentDashboard((prev) => (prev?.id === dashboardId ? null : prev));
+    },
+  });
 
-  const getDashboardById = (dashboardId: string): DashboardData | undefined => {
-    return dashboards.find(dashboard => dashboard.id === dashboardId);
-  };
+  const getDashboardById = useCallback(
+    (dashboardId: string): DashboardData | undefined => dashboards.find((dashboard) => dashboard.id === dashboardId),
+    [dashboards]
+  );
+
+  const createDashboard = useCallback((name: string) => createDashboardMutation.mutateAsync(name), [
+    createDashboardMutation,
+  ]);
+
+  const addChartToDashboard = useCallback(
+    (dashboardId: string, chart: ChartSpec) => addChartMutation.mutateAsync({ dashboardId, chart }),
+    [addChartMutation]
+  );
+
+  const removeChartFromDashboard = useCallback(
+    (dashboardId: string, chartIndex: number) =>
+      removeChartMutation.mutateAsync({ dashboardId, chartIndex }),
+    [removeChartMutation]
+  );
+
+  const deleteDashboard = useCallback(
+    async (dashboardId: string) => {
+      await deleteDashboardMutation.mutateAsync(dashboardId);
+    },
+    [deleteDashboardMutation]
+  );
+
+  const status = useMemo(
+    () => ({
+      isLoading,
+      isFetching,
+      error,
+      refreshing: isFetching && !isLoading,
+    }),
+    [error, isFetching, isLoading]
+  );
 
   return {
     dashboards,
@@ -90,6 +138,8 @@ export const useDashboardState = () => {
     addChartToDashboard,
     removeChartFromDashboard,
     deleteDashboard,
-    getDashboardById
+    getDashboardById,
+    status,
+    refetch,
   };
 };

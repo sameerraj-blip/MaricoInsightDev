@@ -226,13 +226,13 @@ export class ComparisonHandler extends BaseHandler {
       const bestCorrelation = best.correlation;
       
       // Build answer
-      let answer = `Based on my analysis, **${bestName}** is the best ${relationshipType} to "${targetCol}" `;
-      answer += `with a positive correlation of **${bestCorrelation.toFixed(3)}**. `;
+      let answer = `Based on my analysis, ${bestName} is the best ${relationshipType} to "${targetCol}" `;
+      answer += `with a positive correlation of ${bestCorrelation.toFixed(3)}. `;
       
       if (positiveCorrelations.length > 1) {
         answer += `Here's how all ${relationshipType}s rank:\n\n`;
         positiveCorrelations.slice(0, 5).forEach((corr, idx) => {
-          answer += `${idx + 1}. **${corr.variable}**: ${corr.correlation.toFixed(3)}\n`;
+          answer += `${idx + 1}. ${corr.variable}: ${corr.correlation.toFixed(3)}\n`;
         });
       }
       
@@ -279,7 +279,7 @@ export class ComparisonHandler extends BaseHandler {
           },
           {
             id: 2,
-            text: `**Recommendation**: Focus on ${bestName} as it shows the strongest positive relationship with ${targetCol}. When ${bestName} increases, ${targetCol} tends to increase as well.`,
+            text: `**Suggestion**: Focus on ${bestName} as it shows the strongest positive relationship with ${targetCol}. When ${bestName} increases, ${targetCol} tends to increase as well.`,
           },
         ];
       }

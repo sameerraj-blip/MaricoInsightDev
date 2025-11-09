@@ -257,7 +257,7 @@ export async function generateChartInsights(
 CRITICAL: This is a CORRELATION/IMPACT ANALYSIS chart.
 - Y-axis (${chartSpec.y}) = TARGET VARIABLE we want to IMPROVE (${targetVariable})
 - X-axis (${chartSpec.x}) = FACTOR VARIABLE we can CHANGE (${factorVariable})
-- Recommendations MUST focus on: "How to change ${factorVariable} to improve ${targetVariable}"
+- Suggestions MUST focus on: "How to change ${factorVariable} to improve ${targetVariable}"
 
 X-AXIS STATISTICS (${factorVariable} - what we can change):
 - Range: ${formatX(minX)} to ${formatX(maxX)}
@@ -266,7 +266,7 @@ X-AXIS STATISTICS (${factorVariable} - what we can change):
 - Percentiles: P25=${formatX(xP25)}, P75=${formatX(xP75)}, P90=${formatX(xP90)}
 ${xRangeForTopY ? `- Optimal ${factorVariable} range for top Y performers: ${formatX(xRangeForTopY.min)}-${formatX(xRangeForTopY.max)} (avg: ${formatX(avgXForTopY)}, P25-P75: ${formatX(xRangeForTopY.p25)}-${formatX(xRangeForTopY.p75)})` : ''}
 
-RECOMMENDATION FORMAT:
+SUGGESTION FORMAT:
 - Must explain how to CHANGE ${factorVariable} (X-axis) to IMPROVE ${targetVariable} (Y-axis)
 - Use specific X-axis values/ranges from statistics above
 - Example: "To improve ${targetVariable} to ${formatY(yP75)} or higher, adjust ${factorVariable} to ${formatX(xRangeForTopY?.p75 || xP75)}"

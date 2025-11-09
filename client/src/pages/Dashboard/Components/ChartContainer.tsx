@@ -152,6 +152,7 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
                   showAddButton={false}
                   useChartOnlyModal
                   fillParent
+                  enableFilters
                 />
               </div>
             </div>
@@ -171,7 +172,7 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
               </div>
             )}
 
-            {/* Recommendations Section - 15% of content area (or more if no insights) */}
+            {/* Suggestions Section - 15% of content area (or more if no insights) */}
             {chart.recommendation && (
               <div
                 className="flex-shrink-0"

@@ -140,16 +140,37 @@ export function ChartModal({ isOpen, onClose, chart }: ChartModalProps) {
                 {...(chart.y2 ? { yAxisId: "left" } : {})}
               />
               {chart.y2 && (
-                <Line
-                  type="monotone"
-                  dataKey={chart.y2 as string}
-                  name={chart.y2Label || chart.y2}
-                  stroke={rightAxisColor}
-                  strokeWidth={3}
-                  dot={{ r: 6 }}
-                  activeDot={{ r: 8 }}
-                  yAxisId="right"
-                />
+                <>
+                  {!chart.y2Series && (
+                    <Line
+                      type="monotone"
+                      dataKey={chart.y2 as string}
+                      name={chart.y2Label || chart.y2}
+                      stroke={rightAxisColor}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                      yAxisId="right"
+                    />
+                  )}
+                  {chart.y2Series && chart.y2Series.map((series, index) => {
+                    const colors = ['#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                    const seriesColor = colors[index % colors.length];
+                    return (
+                      <Line
+                        key={series}
+                        type="monotone"
+                        dataKey={series}
+                        name={series}
+                        stroke={seriesColor}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 5 }}
+                        yAxisId="right"
+                      />
+                    );
+                  })}
+                </>
               )}
             </LineChart>
           </ResponsiveContainer>
@@ -444,13 +465,13 @@ export function ChartModal({ isOpen, onClose, chart }: ChartModalProps) {
                   </div>
                 )}
                 
-                {/* Recommendation */}
+                {/* Suggestion */}
                 {chart.recommendation && (
                   <div className="bg-green-50 dark:bg-green-950/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
                     <div className="flex items-start gap-3">
                       <div className="w-3 h-3 bg-green-500 rounded-full mt-1 flex-shrink-0"></div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-2">Recommendation</h3>
+                          <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-2">Suggestion</h3>
                           <div 
                             className="max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400"
                             onWheel={(e) => {

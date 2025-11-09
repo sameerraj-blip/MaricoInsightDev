@@ -10,7 +10,9 @@ export default function Dashboard() {
     currentDashboard, 
     setCurrentDashboard, 
     deleteDashboard,
-    removeChartFromDashboard 
+    removeChartFromDashboard,
+    status,
+    refetch,
   } = useDashboardContext();
 
   const handleViewDashboard = (dashboard: DashboardData) => {
@@ -21,25 +23,19 @@ export default function Dashboard() {
     setCurrentDashboard(null);
   };
 
-  const handleDeleteDashboard = (dashboardId: string) => {
+  const handleDeleteDashboard = async (dashboardId: string) => {
     if (confirm('Are you sure you want to delete this dashboard? This action cannot be undone.')) {
-      deleteDashboard(dashboardId);
+      await deleteDashboard(dashboardId);
     }
   };
 
-  const handleDeleteChart = (chartIndex: number) => {
+  const handleDeleteChart = async (chartIndex: number) => {
     console.log('Delete chart clicked:', { chartIndex, currentDashboard: currentDashboard?.id });
     if (currentDashboard && confirm('Are you sure you want to remove this chart from the dashboard?')) {
       console.log('Proceeding with chart deletion');
-      removeChartFromDashboard(currentDashboard.id, chartIndex);
-      
-      // Update the currentDashboard to reflect the changes
-      const updatedDashboard = {
-        ...currentDashboard,
-        charts: currentDashboard.charts.filter((_, index) => index !== chartIndex),
-        updatedAt: new Date()
-      };
+      const updatedDashboard = await removeChartFromDashboard(currentDashboard.id, chartIndex);
       setCurrentDashboard(updatedDashboard);
+      await refetch();
     } else {
       console.log('Chart deletion cancelled or no current dashboard');
     }
@@ -51,6 +47,8 @@ export default function Dashboard() {
         dashboard={currentDashboard}
         onBack={handleBackToList}
         onDeleteChart={handleDeleteChart}
+        isRefreshing={status.refreshing}
+        onRefresh={refetch}
       />
     );
   }
@@ -58,6 +56,8 @@ export default function Dashboard() {
   return (
     <DashboardList
       dashboards={dashboards}
+      isLoading={status.isLoading}
+      isRefreshing={status.refreshing}
       onViewDashboard={handleViewDashboard}
       onDeleteDashboard={handleDeleteDashboard}
     />

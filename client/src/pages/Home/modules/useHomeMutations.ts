@@ -34,6 +34,13 @@ export const useHomeMutations = ({
 }: UseHomeMutationsProps) => {
   const { toast } = useToast();
 
+  const sanitizeMarkdown = (text: string) =>
+    text
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1')
+      .replace(/_(.*?)_/g, '$1');
+
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       return await uploadFile<UploadResponse>('/api/upload', file);
@@ -133,7 +140,7 @@ export const useHomeMutations = ({
       
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.answer,
+        content: sanitizeMarkdown(data.answer),
         charts: data.charts,
         insights: data.insights,
         timestamp: Date.now(),

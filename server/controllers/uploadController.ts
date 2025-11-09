@@ -84,18 +84,14 @@ export const uploadFile = async (
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Initialize RAG: Clear old vector store and chunk data for semantic search
+    // (RAG disabled for now - will enable later)
     try {
       clearVectorStore(sessionId);
-      console.log('📚 Initializing RAG for semantic search...');
       chunkData(data, summary, sessionId);
-      // Generate embeddings in background (non-blocking)
-      generateChunkEmbeddings(sessionId).catch(err => {
-        console.error('RAG embedding generation error (non-critical):', err);
-      });
-      console.log('✅ RAG initialized - embeddings will be generated in background');
+      // Skip embedding generation for now (RAG disabled)
+      // generateChunkEmbeddings(sessionId).catch(() => {});
     } catch (ragError) {
-      console.error('RAG initialization error (continuing without RAG):', ragError);
-      // Continue without RAG if there's an error
+      // Silently continue without RAG
     }
 
     // Generate column statistics for numeric columns

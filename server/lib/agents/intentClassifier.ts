@@ -229,7 +229,14 @@ OUTPUT FORMAT (JSON only, no markdown):
         throw new Error('Missing required fields: type or confidence');
       }
       
-      console.log('🧹 Cleaned parsed result (removed nulls):', JSON.stringify(cleaned, null, 2));
+      // Remove embeddings and other large arrays before logging
+      const cleanedForLog = JSON.parse(JSON.stringify(cleaned, (key, value) => {
+        if (key === 'embedding' || (Array.isArray(value) && value.length > 100)) {
+          return `[Array(${Array.isArray(value) ? value.length : 'large'})]`;
+        }
+        return value;
+      }));
+      console.log('🧹 Cleaned parsed result (removed nulls):', JSON.stringify(cleanedForLog, null, 2));
       
       const validated = analysisIntentSchema.parse(cleaned);
       

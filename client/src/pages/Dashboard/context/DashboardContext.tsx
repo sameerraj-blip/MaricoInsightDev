@@ -6,10 +6,17 @@ interface DashboardContextType {
   currentDashboard: DashboardData | null;
   setCurrentDashboard: (dashboard: DashboardData | null) => void;
   createDashboard: (name: string) => Promise<DashboardData>;
-  addChartToDashboard: (dashboardId: string, chart: any) => Promise<void>;
-  removeChartFromDashboard: (dashboardId: string, chartIndex: number) => Promise<void>;
+  addChartToDashboard: (dashboardId: string, chart: any) => Promise<DashboardData>;
+  removeChartFromDashboard: (dashboardId: string, chartIndex: number) => Promise<DashboardData>;
   deleteDashboard: (dashboardId: string) => Promise<void>;
   getDashboardById: (dashboardId: string) => DashboardData | undefined;
+  status: {
+    isLoading: boolean;
+    isFetching: boolean;
+    error: unknown;
+    refreshing: boolean;
+  };
+  refetch: () => Promise<any>;
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);

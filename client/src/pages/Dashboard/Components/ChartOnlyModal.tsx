@@ -87,11 +87,11 @@ export function ChartOnlyModal({ isOpen, onClose, chart }: ChartOnlyModalProps) 
                   <YAxis
                     orientation="right"
                     yAxisId="right"
-                    tick={{ fill: rightAxisColor, fontSize: 14, fontFamily: 'var(--font-mono)', fontWeight: 500 }}
-                    stroke={rightAxisColor}
+                    tick={{ fill: rightAxisColor, fontSize: 12, fontFamily: 'var(--font-mono)' }}
+                    width={60}
                     tickFormatter={formatAxisLabel}
-                    width={90}
                     label={{ value: chart.y2Label || chart.y2, angle: 90, position: 'right', style: { textAnchor: 'middle', fill: rightAxisColor, fontSize: 16, fontWeight: 600 } }}
+                    stroke={rightAxisColor}
                   />
                 </>
               ) : (
@@ -132,16 +132,37 @@ export function ChartOnlyModal({ isOpen, onClose, chart }: ChartOnlyModalProps) 
                 {...(chart.y2 ? { yAxisId: "left" } : {})}
               />
               {chart.y2 && (
-                <Line
-                  type="monotone"
-                  dataKey={chart.y2 as string}
-                  name={chart.y2Label || chart.y2}
-                  stroke={rightAxisColor}
-                  strokeWidth={3}
-                  dot={{ r: 6 }}
-                  activeDot={{ r: 8 }}
-                  yAxisId="right"
-              />
+                <>
+                  {!chart.y2Series && (
+                    <Line
+                      type="monotone"
+                      dataKey={chart.y2 as string}
+                      name={chart.y2Label || chart.y2}
+                      stroke={rightAxisColor}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 5 }}
+                      yAxisId="right"
+                    />
+                  )}
+                  {chart.y2Series && chart.y2Series.map((series, index) => {
+                    const colors = ['#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                    const seriesColor = colors[index % colors.length];
+                    return (
+                      <Line
+                        key={series}
+                        type="monotone"
+                        dataKey={series}
+                        name={series}
+                        stroke={seriesColor}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 5 }}
+                        yAxisId="right"
+                      />
+                    );
+                  })}
+                </>
               )}
             </LineChart>
           </ResponsiveContainer>

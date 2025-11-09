@@ -430,7 +430,7 @@ export function AnalysisHistory({ onLoadAnalysis }: AnalysisHistoryProps) {
                         )}
                         {chart.recommendation && (
                           <div className="text-sm mt-2">
-                            <div className="font-medium">Recommendation:</div>
+                            <div className="font-medium">Suggestion:</div>
                             <div className="text-muted-foreground">{chart.recommendation}</div>
                           </div>
                         )}
