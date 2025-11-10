@@ -13,7 +13,9 @@ import {
 
 // Base configuration for your backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.PROD ? 'https://maricoinsightingtool2-2.onrender.com' : 'http://localhost:3002');
+  (import.meta.env.PROD 
+    ? (typeof window !== 'undefined' ? window.location.origin : 'https://marico-insight-safe.vercel.app')
+    : 'http://localhost:3002');
 
 // Create axios instance with default configuration
 const apiClient = axios.create({
@@ -100,14 +102,18 @@ export async function apiRequest<T = any>({
   config = {}
 }: ApiRequestOptions): Promise<T> {
   try {
+    console.log(`🌐 Making ${method} request to ${route}`);
     const response = await apiClient.request({
       method,
       url: route,
       data,
       ...config,
     });
+    console.log(`✅ ${method} ${route} - Status: ${response.status}`);
+    console.log('📦 Response data:', response.data);
     return response.data;
   } catch (error) {
+    console.error(`❌ ${method} ${route} failed:`, error);
     throw error; // Error is already handled by interceptor
   }
 }
@@ -229,6 +235,9 @@ export const sessionsApi = {
   
   // Get sessions by specific user
   getSessionsByUser: (username: string) => api.get(`/api/sessions/user/${username}`),
+  
+  // Delete session by session ID
+  deleteSession: (sessionId: string) => api.delete(`/api/sessions/${sessionId}`),
 };
 
 export default apiClient;

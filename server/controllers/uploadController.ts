@@ -1,9 +1,11 @@
 import { Request, Response } from "express";
+import multer from "multer";
 import { parseFile, createDataSummary } from "../lib/fileParser.js";
 import { analyzeUpload } from "../lib/dataAnalyzer.js";
-import { uploadResponseSchema } from "@shared/schema.js";
+import { uploadResponseSchema } from "../../shared/schema.js";
 import { createChatDocument, generateColumnStatistics } from "../lib/cosmosDB.js";
 import { uploadFileToBlob } from "../lib/blobStorage.js";
+import { chunkData, generateChunkEmbeddings, clearVectorStore } from "../lib/ragService.js";
 
 export const uploadFile = async (
   req: Request & { file?: Express.Multer.File },
@@ -80,6 +82,17 @@ export const uploadFile = async (
 
     // Generate a unique session ID for this upload
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Initialize RAG: Clear old vector store and chunk data for semantic search
+    // (RAG disabled for now - will enable later)
+    try {
+      clearVectorStore(sessionId);
+      chunkData(data, summary, sessionId);
+      // Skip embedding generation for now (RAG disabled)
+      // generateChunkEmbeddings(sessionId).catch(() => {});
+    } catch (ragError) {
+      // Silently continue without RAG
+    }
 
     // Generate column statistics for numeric columns
     const columnStatistics = generateColumnStatistics(data, summary.numericColumns);

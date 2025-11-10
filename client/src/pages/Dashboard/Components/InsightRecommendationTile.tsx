@@ -19,7 +19,7 @@ export function InsightRecommendationTile({ variant, text }: InsightRecommendati
 
   return (
     <div className={`h-full flex flex-col p-4 rounded-md border ${containerClasses} overflow-hidden`}>
-      <h3 className={`text-sm font-semibold mb-2 flex-shrink-0 ${titleClasses}`}>{isInsight ? 'Key Insight' : 'Recommendation'}</h3>
+      <h3 className={`text-sm font-semibold mb-2 flex-shrink-0 ${titleClasses}`}>{isInsight ? 'Key Insight' : 'Suggestion'}</h3>
       <div className="flex-1 overflow-y-auto min-h-0">
       <p className={`text-sm leading-relaxed ${textClasses}`}>{text}</p>
       </div>

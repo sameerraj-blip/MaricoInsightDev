@@ -6,6 +6,13 @@ export const chartSpecSchema = z.object({
   title: z.string(),
   x: z.string(),
   y: z.string(),
+  // Optional secondary Y series for dual-axis line charts
+  y2: z.string().optional(),
+  // Optional array of additional Y series for multi-series charts on right axis
+  y2Series: z.array(z.string()).optional(),
+  xLabel: z.string().optional(),
+  yLabel: z.string().optional(),
+  y2Label: z.string().optional(),
   aggregate: z.enum(["sum", "mean", "count", "none"]).optional(),
   data: z.array(z.record(z.union([z.string(), z.number()]))).optional(),
   xDomain: z.tuple([z.number(), z.number()]).optional(), // [min, max] for X-axis

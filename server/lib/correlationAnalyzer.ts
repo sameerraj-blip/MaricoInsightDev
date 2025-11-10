@@ -1,4 +1,4 @@
-import { ChartSpec, Insight, DataSummary } from '@shared/schema.js';
+import { ChartSpec, Insight, DataSummary } from '../../shared/schema.js';
 import { openai, MODEL } from './openai.js';
 import { generateChartInsights } from './insightGenerator.js';
 
@@ -43,7 +43,8 @@ function linearRegression(xValues: number[], yValues: number[]): { slope: number
 export async function analyzeCorrelations(
   data: Record<string, any>[],
   targetVariable: string,
-  numericColumns: string[]
+  numericColumns: string[],
+  filter: 'all' | 'positive' | 'negative' = 'all'
 ): Promise<{ charts: ChartSpec[]; insights: Insight[] }> {
   console.log('=== CORRELATION ANALYSIS DEBUG ===');
   console.log('Target variable:', targetVariable);
@@ -64,8 +65,34 @@ export async function analyzeCorrelations(
     return { charts: [], insights: [] };
   }
 
-  // Get top correlations (by absolute value)
-  const sortedCorrelations = correlations.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
+  // Apply filter if requested
+  let filteredCorrelations = correlations;
+  if (filter === 'positive') {
+    filteredCorrelations = correlations.filter(c => c.correlation > 0);
+    console.log(`Filtering: Showing only POSITIVE correlations (${filteredCorrelations.length} of ${correlations.length})`);
+  } else if (filter === 'negative') {
+    filteredCorrelations = correlations.filter(c => c.correlation < 0);
+    console.log(`Filtering: Showing only NEGATIVE correlations (${filteredCorrelations.length} of ${correlations.length})`);
+  }
+
+  if (filteredCorrelations.length === 0) {
+    const filterMessage = filter === 'positive' 
+      ? 'No positive correlations found.' 
+      : filter === 'negative' 
+      ? 'No negative correlations found.' 
+      : 'No correlations found.';
+    console.warn(filterMessage);
+    return { 
+      charts: [], 
+      insights: [{
+        id: 1,
+        text: `**No ${filter === 'positive' ? 'positive' : 'negative'} correlations found:** ${filterMessage} All correlations with ${targetVariable} are ${filter === 'positive' ? 'negative' : 'positive'}.`
+      }] 
+    };
+  }
+
+  // Get top correlations (by absolute value, then apply filter)
+  const sortedCorrelations = filteredCorrelations.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
   const topCorrelations = sortedCorrelations.slice(0, 12);
 
   // Generate scatter plots for top 3 correlations
@@ -221,7 +248,7 @@ export async function analyzeCorrelations(
     numericColumns: numericColumns,
     dateColumns: [],
   } as unknown as DataSummary;
-  const insights = await generateCorrelationInsights(targetVariable, sortedCorrelations, data, summaryStub);
+  const insights = await generateCorrelationInsights(targetVariable, sortedCorrelations, data, summaryStub, filter);
 
   return { charts, insights };
 }
@@ -286,8 +313,12 @@ async function generateCorrelationInsights(
   targetVariable: string,
   correlations: CorrelationResult[],
   data?: Record<string, any>[],
-  summary?: DataSummary
+  summary?: DataSummary,
+  filter: 'all' | 'positive' | 'negative' = 'all'
 ): Promise<Insight[]> {
+  // Ensure filter is defined (defensive check)
+  const correlationFilter: 'all' | 'positive' | 'negative' = filter || 'all';
+  
   // Calculate quantified statistics for top correlations if data is available
   let quantifiedStats = '';
   if (data && data.length > 0 && summary) {
@@ -352,12 +383,20 @@ ${optimalFactorRange ? `- Optimal ${corr.variable} range for top ${targetVariabl
     }
   }
   
-  const prompt = `Analyze these correlations with ${targetVariable}.
+  const filterContext = correlationFilter === 'positive' 
+    ? '\nIMPORTANT: The user specifically requested ONLY POSITIVE correlations. All correlations shown are positive. Focus your insights on these positive relationships only.'
+    : correlationFilter === 'negative'
+    ? '\nIMPORTANT: The user specifically requested ONLY NEGATIVE correlations. All correlations shown are negative. Focus your insights on these negative relationships only.'
+    : '';
+
+  const prompt = `Analyze these correlations with ${targetVariable}.${filterContext}
 
 DATA HANDLING RULES (must follow exactly):
 - Pearson correlation using pairwise deletion: if either value is NA on a row, exclude that row; do not impute.
 - Use the EXACT signed correlation values provided; never change the sign.
 - Cover ALL variables at least once in the insights (do not omit any listed below).
+${correlationFilter === 'positive' ? '- All correlations shown are POSITIVE (user filtered out negative ones).' : ''}
+${correlationFilter === 'negative' ? '- All correlations shown are NEGATIVE (user filtered out positive ones).' : ''}
 
 VALUES (variable: r, nPairs):
 ${correlations.map((c) => `- ${c.variable}: ${c.correlation.toFixed(3)}, n=${c.nPairs ?? 'NA'}`).join('\n')}
@@ -366,17 +405,17 @@ ${quantifiedStats}
 CRITICAL CONTEXT:
 - ${targetVariable} is the TARGET VARIABLE we want to IMPROVE (Y-axis)
 - The listed variables are FACTOR VARIABLES we can CHANGE (X-axis)
-- Recommendations MUST explain: "How to change [FACTOR] to improve [TARGET]"
+- Suggestions MUST explain: "How to change [FACTOR] to improve [TARGET]"
 
 Write 5-7 insights. Each must include:
 1. **Bold headline** with the key finding
 2. Exact r and nPairs values
 3. Interpretation of the relationship
-4. **Actionable recommendation** that includes:
-   - Keep the current contextual recommendation (explaining the relationship)
-   - ADD a quantified recommendation with specific targets: "To improve ${targetVariable} to [target value], adjust [factor variable] to [specific value/range]"
+4. **Actionable suggestion** that includes:
+   - Keep the current contextual suggestion (explaining the relationship)
+   - ADD a quantified suggestion with specific targets: "To improve ${targetVariable} to [target value], adjust [factor variable] to [specific value/range]"
    - Use specific numbers from the quantified statistics above (optimal ranges, percentiles, averages)
-   - Example format: "**Current recommendation:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to P75 level ([target value]), adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
+   - Example format: "**Current suggestion:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to P75 level ([target value]), adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
 5. Reminder that correlation != causation
 
 Output JSON only: {"insights":[{"text":"..."}]}`;
@@ -386,7 +425,7 @@ Output JSON only: {"insights":[{"text":"..."}]}`;
     messages: [
       {
         role: 'system',
-        content: 'You are a senior data analyst providing detailed correlation insights. Be specific, use correlation values, and provide actionable recommendations. Output valid JSON.',
+        content: 'You are a senior data analyst providing detailed correlation insights. Be specific, use correlation values, and provide actionable suggestions. Output valid JSON.',
       },
       {
         role: 'user',

@@ -125,7 +125,7 @@ export function FileUpload({ onFileSelect, isUploading, autoOpenTrigger = 0 }: F
               <span className="text-lg">💡</span>
             </div>
             <h4 className="font-semibold text-gray-900 mb-1 text-sm">AI Insights</h4>
-            <p className="text-xs text-gray-500">Actionable recommendations</p>
+            <p className="text-xs text-gray-500">Actionable suggestions</p>
           </div>
           <div className="text-center p-4 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow">
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-3">

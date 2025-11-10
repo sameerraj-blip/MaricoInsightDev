@@ -1,0 +1,45 @@
+import { ChartSpec } from '@shared/schema';
+
+export type DashboardTile =
+  | DashboardChartTile
+  | DashboardInsightTile
+  | DashboardActionTile;
+
+export interface DashboardChartTile {
+  kind: 'chart';
+  id: string;
+  title: string;
+  chart: ChartSpec;
+  index: number;
+  metadata?: {
+    primaryMetricLabel?: string;
+    primaryMetricValue?: string;
+    lastUpdated?: Date;
+  };
+}
+
+export interface DashboardInsightTile {
+  kind: 'insight';
+  id: string;
+  title: string;
+  narrative: string;
+  confidence?: 'low' | 'medium' | 'high';
+  relatedChartId?: string;
+}
+
+export interface DashboardActionTile {
+  kind: 'action';
+  id: string;
+  title: string;
+  recommendation: string;
+  impactEstimate?: string;
+  relatedChartId?: string;
+}
+
+export interface DashboardSection {
+  id: string;
+  title: string;
+  description?: string;
+  tiles: DashboardTile[];
+}
+
