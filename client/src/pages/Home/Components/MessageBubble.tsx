@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { Message } from '@shared/schema';
 import { User, Bot } from 'lucide-react';
 import { ChartRenderer } from './ChartRenderer';
@@ -14,19 +15,20 @@ interface MessageBubbleProps {
   totalColumns?: number;
 }
 
-export function MessageBubble({ 
-  message, 
-  sampleRows, 
+export const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(({
+  message,
+  sampleRows,
   columns,
   numericColumns,
   dateColumns,
   totalRows,
   totalColumns
-}: MessageBubbleProps) {
+}, ref) => {
   const isUser = message.role === 'user';
 
   return (
     <div
+      ref={ref}
       className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
       data-testid={`message-${message.role}`}
     >
@@ -85,6 +87,7 @@ export function MessageBubble({
                 chart={chart} 
                 index={idx}
                 isSingleChart={message.charts!.length === 1}
+                enableFilters
               />
             ))}
           </div>
@@ -104,4 +107,6 @@ export function MessageBubble({
       )}
     </div>
   );
-}
+});
+
+MessageBubble.displayName = 'MessageBubble';

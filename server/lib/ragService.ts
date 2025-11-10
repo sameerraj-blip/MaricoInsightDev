@@ -105,8 +105,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     return response.data[0].embedding;
   } catch (error) {
-    console.error('Error generating embedding:', error);
-    console.error('Note: Make sure you have an embeddings deployment in Azure OpenAI');
+    // Silently fail - RAG will be disabled for this chunk
+    // (Logging removed to reduce console noise - will enable RAG later)
     // Return zero vector as fallback (RAG will be disabled for this chunk)
     return new Array(EMBEDDING_DIMENSION).fill(0);
   }
@@ -209,6 +209,10 @@ export async function generateChunkEmbeddings(sessionId: string): Promise<void> 
   const store = getVectorStore(sessionId);
   const chunks = store.getAllChunks();
   
+  // Skip embedding generation for now (RAG disabled)
+  // Will enable later when RAG is fully configured
+  return;
+  
   // Generate embeddings in batches to avoid rate limits
   const batchSize = 10;
   for (let i = 0; i < chunks.length; i += batchSize) {
@@ -240,6 +244,10 @@ export async function retrieveRelevantContext(
   sessionId: string,
   topK: number = 5
 ): Promise<DataChunk[]> {
+  // RAG disabled for now - return empty array
+  // Will enable later when RAG is fully configured
+  return [];
+  
   const store = getVectorStore(sessionId);
   
   // If store is empty, initialize it
@@ -312,6 +320,10 @@ export async function retrieveSimilarPastQA(
   chatHistory: Message[],
   topK: number = 2
 ): Promise<DataChunk[]> {
+  // RAG disabled for now - return empty array
+  // Will enable later when RAG is fully configured
+  return [];
+  
   if (chatHistory.length < 2) return [];
   
   // Extract Q&A pairs from history

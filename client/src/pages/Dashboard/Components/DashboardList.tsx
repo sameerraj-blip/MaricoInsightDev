@@ -3,17 +3,47 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BarChart3, Calendar, Trash2, Eye } from 'lucide-react';
 import { DashboardData } from '../modules/useDashboardState';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface DashboardListProps {
   dashboards: DashboardData[];
+  isLoading?: boolean;
+  isRefreshing?: boolean;
   onViewDashboard: (dashboard: DashboardData) => void;
   onDeleteDashboard: (dashboardId: string) => void;
 }
 
-export function DashboardList({ dashboards, onViewDashboard, onDeleteDashboard }: DashboardListProps) {
-  if (dashboards.length === 0) {
+const SkeletonCard = () => (
+  <Card className="border-0">
+    <CardHeader className="pb-3">
+      <div className="flex items-start justify-between">
+        <div className="flex-1 space-y-3">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+        <Skeleton className="h-6 w-16 rounded-full" />
+      </div>
+    </CardHeader>
+    <CardContent className="space-y-4 pt-0">
+      <Skeleton className="h-4 w-full" />
+      <div className="flex gap-2">
+        <Skeleton className="h-10 w-full rounded-md" />
+        <Skeleton className="h-10 w-10 rounded-md" />
+      </div>
+    </CardContent>
+  </Card>
+);
+
+export function DashboardList({
+  dashboards,
+  isLoading = false,
+  isRefreshing = false,
+  onViewDashboard,
+  onDeleteDashboard,
+}: DashboardListProps) {
+  if (!isLoading && dashboards.length === 0) {
     return (
-      <div className="h-[calc(100vh-10vh)] flex flex-col items-center justify-center text-center py-12">
+      <div className="h-[calc(100vh-72px)] flex flex-col items-center justify-center text-center py-12">
         <div className="rounded-full bg-muted p-6 mb-4">
           <BarChart3 className="h-12 w-12 text-muted-foreground" />
         </div>
@@ -30,17 +60,26 @@ export function DashboardList({ dashboards, onViewDashboard, onDeleteDashboard }
   }
 
   return (
-    <div className="h-[calc(100vh-10vh)] overflow-y-auto">
-      <div className="p-6">
+    <div className="h-[calc(100vh-72px)] flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 p-6 pb-4">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground mb-2">Your Dashboards</h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground flex items-center gap-2">
             Manage and view your saved dashboards
+            {isRefreshing && (
+              <Badge variant="outline" className="text-xs font-medium uppercase tracking-wide">
+                Updating…
+              </Badge>
+            )}
           </p>
         </div>
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {dashboards.map((dashboard) => (
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, index) => <SkeletonCard key={`skeleton-${index}`} />)
+          : dashboards.map((dashboard) => (
           <Card key={dashboard.id} className="hover:shadow-none transition-shadow border-0">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">

@@ -41,7 +41,9 @@ export async function retrieveContext(
       mentionedColumns,
     };
   } catch (error) {
-    console.error('RAG retrieval error, using fallback:', error);
+    // Sanitize error to remove any large arrays/embeddings
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('RAG retrieval error, using fallback:', errorMessage);
     
     // Fallback to basic context from data summary
     return {

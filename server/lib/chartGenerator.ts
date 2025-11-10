@@ -1,4 +1,5 @@
 import { ChartSpec } from '../../shared/schema.js';
+import { findMatchingColumn } from './agents/utils/columnMatcher.js';
 
 // Helper to clean numeric values (strip %, commas, etc.)
 function toNumber(value: any): number {
@@ -87,75 +88,56 @@ export function processChartData(
   const availableColumns = Object.keys(firstRow);
   console.log(`   Available columns: [${availableColumns.join(', ')}]`);
   
-  // Check if required columns exist
-  if (!firstRow.hasOwnProperty(x)) {
+  // Use flexible column matching instead of exact hasOwnProperty checks
+  // This handles whitespace differences, case variations, and other imperfections
+  const matchedX = findMatchingColumn(x, availableColumns);
+  const matchedY = findMatchingColumn(y, availableColumns);
+  const matchedY2 = y2 ? findMatchingColumn(y2, availableColumns) : null;
+  
+  if (!matchedX) {
     console.warn(`❌ Column "${x}" not found in data for chart: ${chartSpec.title}`);
     console.log(`   Available columns: [${availableColumns.join(', ')}]`);
     return [];
   }
   
-  if (!firstRow.hasOwnProperty(y)) {
+  if (!matchedY) {
     console.warn(`❌ Column "${y}" not found in data for chart: ${chartSpec.title}`);
     console.log(`   Available columns: [${availableColumns.join(', ')}]`);
     return [];
   }
+  
   // Optional secondary series existence check (for dual-axis line charts)
-  if (y2 && !firstRow.hasOwnProperty(y2)) {
+  if (y2 && !matchedY2) {
     console.warn(`❌ Column "${y2}" not found in data for secondary series of chart: ${chartSpec.title}`);
+    console.log(`   Available columns: [${availableColumns.join(', ')}]`);
   }
   
-  // Check for valid data in the columns
-  const xValues = data.map(row => row[x]).filter(v => v !== null && v !== undefined && v !== '');
-  const yValues = data.map(row => row[y]).filter(v => v !== null && v !== undefined && v !== '');
+  // Update chart spec with matched column names to ensure consistency
+  chartSpec.x = matchedX;
+  chartSpec.y = matchedY;
+  if (y2 && matchedY2) {
+    chartSpec.y2 = matchedY2;
+  }
   
-  console.log(`   X column "${x}": ${xValues.length} valid values (sample: ${xValues.slice(0, 3).join(', ')})`);
-  console.log(`   Y column "${y}": ${yValues.length} valid values (sample: ${yValues.slice(0, 3).join(', ')})`);
+  // Use matched column names for data access
+  const xCol = matchedX;
+  const yCol = matchedY;
+  const y2Col = matchedY2;
+  
+  // Check for valid data in the columns (using matched column names)
+  const xValues = data.map(row => row[xCol]).filter(v => v !== null && v !== undefined && v !== '');
+  const yValues = data.map(row => row[yCol]).filter(v => v !== null && v !== undefined && v !== '');
+  
+  console.log(`   X column "${xCol}" (matched from "${x}"): ${xValues.length} valid values (sample: ${xValues.slice(0, 3).join(', ')})`);
+  console.log(`   Y column "${yCol}" (matched from "${y}"): ${yValues.length} valid values (sample: ${yValues.slice(0, 3).join(', ')})`);
   
   if (xValues.length === 0) {
-    console.warn(`❌ No valid X values in column "${x}" for chart: ${chartSpec.title}`);
-    console.log(`   Trying to find alternative X column...`);
-    
-    // Try to find a similar column
-    const alternativeX = availableColumns.find(col => 
-      col.toLowerCase().includes(x.toLowerCase().split(' ')[0]) ||
-      x.toLowerCase().split(' ')[0].includes(col.toLowerCase())
-    );
-    
-    if (alternativeX) {
-      console.log(`   Using alternative X column: "${alternativeX}"`);
-      const newXValues = data.map(row => row[alternativeX]).filter(v => v !== null && v !== undefined && v !== '');
-      if (newXValues.length > 0) {
-        console.log(`   Alternative X column has ${newXValues.length} valid values`);
-        // Update the chart spec to use the alternative column
-        chartSpec.x = alternativeX;
-        return processChartData(data, chartSpec);
-      }
-    }
-    
+    console.warn(`❌ No valid X values in column "${xCol}" for chart: ${chartSpec.title}`);
     return [];
   }
   
   if (yValues.length === 0) {
-    console.warn(`❌ No valid Y values in column "${y}" for chart: ${chartSpec.title}`);
-    console.log(`   Trying to find alternative Y column...`);
-    
-    // Try to find a similar column
-    const alternativeY = availableColumns.find(col => 
-      col.toLowerCase().includes(y.toLowerCase().split(' ')[0]) ||
-      y.toLowerCase().split(' ')[0].includes(col.toLowerCase())
-    );
-    
-    if (alternativeY) {
-      console.log(`   Using alternative Y column: "${alternativeY}"`);
-      const newYValues = data.map(row => row[alternativeY]).filter(v => v !== null && v !== undefined && v !== '');
-      if (newYValues.length > 0) {
-        console.log(`   Alternative Y column has ${newYValues.length} valid values`);
-        // Update the chart spec to use the alternative column
-        chartSpec.y = alternativeY;
-        return processChartData(data, chartSpec);
-      }
-    }
-    
+    console.warn(`❌ No valid Y values in column "${yCol}" for chart: ${chartSpec.title}`);
     return [];
   }
 
@@ -163,10 +145,10 @@ export function processChartData(
     // For scatter plots, filter numeric values and sample if needed
     let scatterData = data
       .map((row) => ({
-        [x]: toNumber(row[x]),
-        [y]: toNumber(row[y]),
+        [xCol]: toNumber(row[xCol]),
+        [yCol]: toNumber(row[yCol]),
       }))
-      .filter((row) => !isNaN(row[x]) && !isNaN(row[y]));
+      .filter((row) => !isNaN(row[xCol]) && !isNaN(row[yCol]));
 
     console.log(`   Scatter plot: ${scatterData.length} valid numeric points`);
 
@@ -183,11 +165,11 @@ export function processChartData(
   if (type === 'pie') {
     // Aggregate and get top 5 categories
     console.log(`   Processing pie chart with aggregation: ${aggregate || 'sum'}`);
-    const aggregated = aggregateData(data, x, y, aggregate || 'sum');
+    const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum');
     console.log(`   Aggregated data points: ${aggregated.length}`);
     
     const result = aggregated
-      .sort((a, b) => toNumber(b[y]) - toNumber(a[y]))
+      .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
       .slice(0, 5);
     
     console.log(`   Pie chart result: ${result.length} segments`);
@@ -197,11 +179,11 @@ export function processChartData(
   if (type === 'bar') {
     // Aggregate and get top 10 for bar charts
     console.log(`   Processing bar chart with aggregation: ${aggregate || 'sum'}`);
-    const aggregated = aggregateData(data, x, y, aggregate || 'sum');
+    const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum');
     console.log(`   Aggregated data points: ${aggregated.length}`);
     
     const result = aggregated
-      .sort((a, b) => toNumber(b[y]) - toNumber(a[y]))
+      .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
       .slice(0, 10);
     
     console.log(`   Bar chart result: ${result.length} bars`);
@@ -214,23 +196,23 @@ export function processChartData(
     // Sort by x and optionally aggregate
     if (aggregate && aggregate !== 'none') {
       console.log(`   Using aggregation: ${aggregate}`);
-      const aggregated = aggregateData(data, x, y, aggregate);
+      const aggregated = aggregateData(data, xCol, yCol, aggregate);
       console.log(`   Aggregated data points: ${aggregated.length}`);
       // Use date-aware sorting
-      const result = aggregated.sort((a, b) => compareValues(a[x], b[x]));
+      const result = aggregated.sort((a, b) => compareValues(a[xCol], b[xCol]));
       console.log(`   ${type} chart result: ${result.length} points (sorted chronologically)`);
       return result;
     }
 
     const result = data
       .map((row) => ({
-        [x]: row[x],
-        [y]: toNumber(row[y]),
-        ...(y2 ? { [y2]: toNumber(row[y2]) } : {}),
+        [xCol]: row[xCol],
+        [yCol]: toNumber(row[yCol]),
+        ...(y2Col ? { [y2Col]: toNumber(row[y2Col]) } : {}),
       }))
-      .filter((row) => !isNaN(row[y]) && (!y2 || !isNaN(row[y2 as string])))
+      .filter((row) => !isNaN(row[yCol]) && (!y2Col || !isNaN(row[y2Col])))
       // Use date-aware sorting for chronological order
-      .sort((a, b) => compareValues(a[x], b[x]));
+      .sort((a, b) => compareValues(a[xCol], b[xCol]));
     
     console.log(`   ${type} chart result: ${result.length} points (sorted chronologically)`);
     return result;

@@ -269,7 +269,7 @@ export class CorrelationHandler extends BaseHandler {
       }
 
       // Build answer
-      let answer = `I've analyzed what affects **${targetCol}**. `;
+      let answer = `I've analyzed what affects ${targetCol}. `;
       
       if (filter === 'positive') {
         answer += `I've filtered to show only positive correlations as requested. `;

@@ -405,17 +405,17 @@ ${quantifiedStats}
 CRITICAL CONTEXT:
 - ${targetVariable} is the TARGET VARIABLE we want to IMPROVE (Y-axis)
 - The listed variables are FACTOR VARIABLES we can CHANGE (X-axis)
-- Recommendations MUST explain: "How to change [FACTOR] to improve [TARGET]"
+- Suggestions MUST explain: "How to change [FACTOR] to improve [TARGET]"
 
 Write 5-7 insights. Each must include:
 1. **Bold headline** with the key finding
 2. Exact r and nPairs values
 3. Interpretation of the relationship
-4. **Actionable recommendation** that includes:
-   - Keep the current contextual recommendation (explaining the relationship)
-   - ADD a quantified recommendation with specific targets: "To improve ${targetVariable} to [target value], adjust [factor variable] to [specific value/range]"
+4. **Actionable suggestion** that includes:
+   - Keep the current contextual suggestion (explaining the relationship)
+   - ADD a quantified suggestion with specific targets: "To improve ${targetVariable} to [target value], adjust [factor variable] to [specific value/range]"
    - Use specific numbers from the quantified statistics above (optimal ranges, percentiles, averages)
-   - Example format: "**Current recommendation:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to P75 level ([target value]), adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
+   - Example format: "**Current suggestion:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to P75 level ([target value]), adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
 5. Reminder that correlation != causation
 
 Output JSON only: {"insights":[{"text":"..."}]}`;
@@ -425,7 +425,7 @@ Output JSON only: {"insights":[{"text":"..."}]}`;
     messages: [
       {
         role: 'system',
-        content: 'You are a senior data analyst providing detailed correlation insights. Be specific, use correlation values, and provide actionable recommendations. Output valid JSON.',
+        content: 'You are a senior data analyst providing detailed correlation insights. Be specific, use correlation values, and provide actionable suggestions. Output valid JSON.',
       },
       {
         role: 'user',

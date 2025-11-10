@@ -141,7 +141,7 @@ export class StatisticalHandler extends BaseHandler {
         ? bestValue.toFixed(2) 
         : String(bestValue);
       
-      const answer = `The ${isMax ? 'highest' : 'lowest'} value for **${targetCol}** is **${valueStr}**, which occurs in **${identifier}**.`;
+      const answer = `The ${isMax ? 'highest' : 'lowest'} value for ${targetCol} is ${valueStr}, which occurs in ${identifier}.`;
 
       // Create a chart showing the data point
       const charts: ChartSpec[] = [];
@@ -184,13 +184,13 @@ export class StatisticalHandler extends BaseHandler {
       const min = Math.min(...values);
       const max = Math.max(...values);
 
-      let answer = `Here are the statistics for **${targetCol}**:\n\n`;
-      answer += `- **Count**: ${values.length} values\n`;
-      answer += `- **Average**: ${avg.toFixed(2)}\n`;
-      answer += `- **Median**: ${median.toFixed(2)}\n`;
-      answer += `- **Minimum**: ${min.toFixed(2)}\n`;
-      answer += `- **Maximum**: ${max.toFixed(2)}\n`;
-      answer += `- **Sum**: ${sum.toFixed(2)}\n`;
+      let answer = `Here are the statistics for ${targetCol}:\n\n`;
+      answer += `- Count: ${values.length} values\n`;
+      answer += `- Average: ${avg.toFixed(2)}\n`;
+      answer += `- Median: ${median.toFixed(2)}\n`;
+      answer += `- Minimum: ${min.toFixed(2)}\n`;
+      answer += `- Maximum: ${max.toFixed(2)}\n`;
+      answer += `- Sum: ${sum.toFixed(2)}\n`;
 
       return { answer };
     }
