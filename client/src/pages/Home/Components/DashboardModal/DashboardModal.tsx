@@ -165,7 +165,7 @@ export function DashboardModal({ isOpen, onClose, chart }: DashboardModalProps) 
                               <BarChart3 className="h-4 w-4" />
                               <span className="flex-1">{dashboard.name}</span>
                               <span className="text-xs text-muted-foreground">
-                                {dashboard.charts.length} charts
+                                {dashboard.sheets?.length || 1} sheet{(dashboard.sheets?.length || 1) === 1 ? '' : 's'}
                               </span>
                             </button>
                           ))
@@ -215,7 +215,7 @@ export function DashboardModal({ isOpen, onClose, chart }: DashboardModalProps) 
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{dashboard.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {dashboard.charts.length} charts • Created {new Date(dashboard.createdAt).toLocaleDateString()}
+                            {dashboard.sheets?.length || 1} sheet{(dashboard.sheets?.length || 1) === 1 ? '' : 's'} • Created {new Date(dashboard.createdAt).toLocaleDateString()}
                           </div>
                         </div>
                       </button>
@@ -271,7 +271,7 @@ export function DashboardModal({ isOpen, onClose, chart }: DashboardModalProps) 
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {selectedDashboard ? 
-                          `${dashboards.find(d => d.id === selectedDashboard)?.charts.length || 0} charts` : 
+                          `${dashboards.find(d => d.id === selectedDashboard)?.sheets?.length || 1} sheet${(dashboards.find(d => d.id === selectedDashboard)?.sheets?.length || 1) === 1 ? '' : 's'}` : 
                           'New dashboard'
                         }
                       </div>

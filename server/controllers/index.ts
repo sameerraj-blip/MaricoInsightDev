@@ -10,6 +10,7 @@ export {
 export {
   createDashboardController,
   listDashboardsController,
+  getDashboardController,
   deleteDashboardController,
   addChartToDashboardController,
   removeChartFromDashboardController,
@@ -17,4 +18,5 @@ export {
   removeSheetFromDashboardController,
   renameSheetController,
   renameDashboardController,
+  updateChartInsightOrRecommendationController,
 } from './dashboardController.js';

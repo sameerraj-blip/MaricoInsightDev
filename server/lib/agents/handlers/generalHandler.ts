@@ -140,7 +140,7 @@ export class GeneralHandler extends BaseHandler {
         };
       }
       
-      const insights = await generateChartInsights(updatedChart, chartData, context.summary);
+      const insights = await generateChartInsights(updatedChart, chartData, context.summary, context.chatInsights);
       
       return {
         answer: `I've added ${y2Column} on the secondary Y-axis. The chart now shows ${previousChart.y} on the left axis and ${y2Column} on the right axis.`,
@@ -183,7 +183,7 @@ export class GeneralHandler extends BaseHandler {
       
       const chartData = processChartData(context.data, dualAxisSpec);
       if (chartData.length > 0) {
-        const insights = await generateChartInsights(dualAxisSpec, chartData, context.summary);
+        const insights = await generateChartInsights(dualAxisSpec, chartData, context.summary, context.chatInsights);
         return {
           answer: `I've created a line chart with ${primaryY} on the left axis and ${y2Column} on the right axis.`,
           charts: [{

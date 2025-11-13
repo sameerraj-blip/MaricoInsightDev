@@ -112,7 +112,8 @@ export async function answerQuestion(
   question: string,
   chatHistory: Message[],
   summary: DataSummary,
-  sessionId?: string
+  sessionId?: string,
+  chatInsights?: Insight[]
 ): Promise<{ answer: string; charts?: ChartSpec[]; insights?: Insight[] }> {
   // CRITICAL: This log should ALWAYS appear first
   console.log('🚀 answerQuestion() CALLED with question:', question);
@@ -154,7 +155,8 @@ export async function answerQuestion(
       chatHistory,
       data,
       summary,
-      sessionId || 'unknown'
+      sessionId || 'unknown',
+      chatInsights
     );
     
     console.log('📤 Agent system result:', { 
@@ -652,7 +654,7 @@ export async function answerQuestion(
       };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
     
     return withNotes({ 
       answer: `Created a scatter plot showing the correlation between ${resolvedVar1} and ${resolvedVar2}: X = ${resolvedVar1}, Y = ${resolvedVar2}.`,
@@ -772,7 +774,7 @@ export async function answerQuestion(
       };
     }
     
-    const insights = await generateChartInsights(spec, processed, summary);
+    const insights = await generateChartInsights(spec, processed, summary, chatInsights);
     const chart: ChartSpec = { 
       ...spec, 
       data: processed, 
@@ -819,7 +821,7 @@ export async function answerQuestion(
       if (dataProcessed.length === 0) {
         return { answer: `No valid data points found for line chart using ${xTime}.` };
       }
-      const insights = await generateChartInsights(spec, dataProcessed, summary);
+      const insights = await generateChartInsights(spec, dataProcessed, summary, chatInsights);
       return withNotes({ 
         answer: `Created a dual-axis line chart: X = ${xTime}, left Y = ${against.yVar}, right Y = ${against.xVar}.`,
         charts: [{ ...spec, data: dataProcessed, keyInsight: insights.keyInsight, recommendation: insights.recommendation }]
@@ -840,7 +842,7 @@ export async function answerQuestion(
     if (scatterData.length === 0) {
       return { answer: `No valid data points found for scatter plot with X=${against.xVar}, Y=${against.yVar}.` };
     }
-    const scatterInsights = await generateChartInsights(scatter, scatterData, summary);
+    const scatterInsights = await generateChartInsights(scatter, scatterData, summary, chatInsights);
     return withNotes({ 
       answer: `Created a scatter plot: X = ${against.xVar}, Y = ${against.yVar}.`,
       charts: [{ ...scatter, data: scatterData, keyInsight: scatterInsights.keyInsight, recommendation: scatterInsights.recommendation }]
@@ -911,7 +913,7 @@ export async function answerQuestion(
         };
       }
       
-      const dualAxisInsights = await generateChartInsights(dualAxisLineSpec, dualAxisLineData, summary);
+      const dualAxisInsights = await generateChartInsights(dualAxisLineSpec, dualAxisLineData, summary, chatInsights);
       
       const charts: ChartSpec[] = [{
         ...dualAxisLineSpec,
@@ -976,9 +978,9 @@ export async function answerQuestion(
       };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
-    const lineInsights1 = await generateChartInsights(lineSpec1, lineData1, summary);
-    const lineInsights2 = await generateChartInsights(lineSpec2, lineData2, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
+    const lineInsights1 = await generateChartInsights(lineSpec1, lineData1, summary, chatInsights);
+    const lineInsights2 = await generateChartInsights(lineSpec2, lineData2, summary, chatInsights);
     
     const charts: ChartSpec[] = [];
     
@@ -1043,6 +1045,11 @@ export async function answerQuestion(
   const wantsOnlyPositive = /\b(only\s+positive|positive\s+only|just\s+positive|dont\s+include\s+negative|don't\s+include\s+negative|no\s+negative|exclude\s+negative|filter\s+positive|show\s+only\s+positive)\b/i.test(question);
   const wantsOnlyNegative = /\b(only\s+negative|negative\s+only|just\s+negative|dont\s+include\s+positive|don't\s+include\s+positive|no\s+positive|exclude\s+positive|filter\s+negative|show\s+only\s+negative)\b/i.test(question);
   const correlationFilter = wantsOnlyPositive ? 'positive' : wantsOnlyNegative ? 'negative' : 'all';
+  
+  // Detect sort order preference - only set if user explicitly requested it
+  const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low|largest\s+to\s+smallest|biggest\s+to\s+smallest\b/i.test(question);
+  const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high|smallest\s+to\s+largest|smallest\s+to\s+biggest\b/i.test(question);
+  const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined; // Only set if user explicitly requested
 
   // CRITICAL: Detect correlation requests even when chart type is specified
   // This handles queries like "bar plot for showing the correlation between X and Y"
@@ -1118,7 +1125,9 @@ export async function answerQuestion(
         workingData,
         targetCol,
         comparisonColumns,
-        correlationFilter
+        correlationFilter,
+        sortOrder,
+        chatInsights
       );
       
       // Update bar chart title to be more specific if adstocked variables were requested
@@ -1141,7 +1150,7 @@ export async function answerQuestion(
         if (needsEnrichment) {
           enrichedCharts = await Promise.all(
             enrichedCharts.map(async (c: any) => {
-              const chartInsights = await generateChartInsights(c, c.data || [], summary);
+              const chartInsights = await generateChartInsights(c, c.data || [], summary, chatInsights);
               return { ...c, keyInsight: c.keyInsight ?? chartInsights.keyInsight, recommendation: c.recommendation ?? chartInsights.recommendation } as ChartSpec;
             })
           );
@@ -1156,7 +1165,9 @@ export async function answerQuestion(
         ? ' I\'ve filtered to show only negative correlations as requested.' 
         : '';
       
-      const answer = `I've analyzed the correlation between ${targetCol} and ${wantsAdstocked ? 'the adstocked variables' : variablesRaw}.${filterNote} The bar chart shows the correlation strength for each variable, sorted in ascending order.`;
+      // Only mention sort order if user explicitly requested it
+      const sortOrderNote = sortOrder === 'descending' ? ', sorted in descending order (highest to lowest)' : sortOrder === 'ascending' ? ', sorted in ascending order (lowest to highest)' : '';
+      const answer = `I've analyzed the correlation between ${targetCol} and ${wantsAdstocked ? 'the adstocked variables' : variablesRaw}.${filterNote} The bar chart shows the correlation strength for each variable${sortOrderNote}.`;
       
       return withNotes({ answer, charts: enrichedCharts, insights });
     }
@@ -1222,11 +1233,18 @@ export async function answerQuestion(
           : targetCol; // default Y = target variable
 
         // Both numeric: Use correlation analysis
+        // Only set sort order if user explicitly requested it
+        const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low\b/i.test(question);
+        const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high\b/i.test(question);
+        const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined;
+        
         const { charts, insights } = await analyzeCorrelations(
           workingData,
           yVar,
           [xVar],
-          correlationFilter
+          correlationFilter,
+          sortOrder,
+          chatInsights
         );
         const filterNote = correlationFilter === 'positive' ? ' (showing only positive correlations)' : correlationFilter === 'negative' ? ' (showing only negative correlations)' : '';
         const answer = `I've analyzed the correlation between ${specificCol} and ${targetCol}${filterNote}. The scatter plot is oriented with X = ${xVar} and Y = ${yVar} as requested.`;
@@ -1279,11 +1297,19 @@ export async function answerQuestion(
       
       // General correlation analysis - analyze all numeric variables except the target itself
       const comparisonColumns = summary.numericColumns.filter(col => col !== targetCol);
+      
+      // Detect sort order preference for general correlation questions - only set if user explicitly requested it
+      const wantsDescendingGeneral = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low|largest\s+to\s+smallest|biggest\s+to\s+smallest\b/i.test(question);
+      const wantsAscendingGeneral = /\bascending|lowest\s+to\s+highest|low\s+to\s+high|smallest\s+to\s+largest|smallest\s+to\s+biggest\b/i.test(question);
+      const sortOrderGeneral = wantsDescendingGeneral ? 'descending' : wantsAscendingGeneral ? 'ascending' : undefined; // Only set if user explicitly requested
+      
       const { charts, insights } = await analyzeCorrelations(
         workingData,
         targetCol,
         comparisonColumns,
-        correlationFilter
+        correlationFilter,
+        sortOrderGeneral,
+        chatInsights
       );
 
       // Fallback: if for any reason charts came back without per-chart insights,
@@ -1294,7 +1320,7 @@ export async function answerQuestion(
         if (needsEnrichment) {
           enrichedCharts = await Promise.all(
             charts.map(async (c: any) => {
-              const chartInsights = await generateChartInsights(c, c.data || [], summary);
+              const chartInsights = await generateChartInsights(c, c.data || [], summary, chatInsights);
               return { ...c, keyInsight: c.keyInsight ?? chartInsights.keyInsight, recommendation: c.recommendation ?? chartInsights.recommendation } as ChartSpec;
             })
           );
@@ -1316,7 +1342,7 @@ export async function answerQuestion(
 
   // For general questions, generate answer and optional charts
   // Pass workingData (already filtered) instead of raw data
-  return await generateGeneralAnswer(workingData, question, chatHistory, summary, sessionId, parsedQuery, transformationNotes);
+  return await generateGeneralAnswer(workingData, question, chatHistory, summary, sessionId, parsedQuery, transformationNotes, chatInsights);
 }
 
 async function generateChartSpecs(summary: DataSummary): Promise<ChartSpec[]> {
@@ -1559,13 +1585,18 @@ Output format: [{"type": "...", "title": "...", "x": "...", "y": "...", "aggrega
         y: y,
         aggregate: aggregate,
       };
-    }).filter((spec: any) => 
-      spec && // Remove null entries (filtered pie charts)
-      spec.type && spec.x && spec.y &&
-      ['line', 'bar', 'scatter', 'pie', 'area'].includes(spec.type) &&
-      // Additional validation: pie charts should not use date columns
-      !(spec.type === 'pie' && dateColumns.includes(spec.x))
-    );
+    }).filter((spec: any) => {
+      if (!spec || !spec.type || !spec.x || !spec.y) return false;
+      if (!['line', 'bar', 'scatter', 'pie', 'area'].includes(spec.type)) return false;
+      
+      // Filter out pie charts with date columns (unless explicitly requested in generateGeneralAnswer)
+      // This function is for auto-generated charts, so we don't allow date columns for pie charts here
+      if (spec.type === 'pie' && dateColumns.includes(spec.x)) {
+        return false;
+      }
+      
+      return true;
+    });
     
     console.log('Generated charts:', sanitized.length);
     console.log(sanitized);
@@ -1684,8 +1715,8 @@ ${Object.entries(stats)
     return `${col}:
   - Range: ${formatValue(col, s.min)} to ${formatValue(col, s.max)}
   - Average: ${formatValue(col, s.avg)}
-  - Median (P50): ${formatValue(col, s.median)}
-  - Percentiles: P25=${formatValue(col, s.p25)}, P75=${formatValue(col, s.p75)}, P90=${formatValue(col, s.p90)}
+  - Median: ${formatValue(col, s.median)}
+  - 25th percentile: ${formatValue(col, s.p25)}, 75th percentile: ${formatValue(col, s.p75)}, 90th percentile: ${formatValue(col, s.p90)}
   - Total: ${formatValue(col, s.total)}
   - Standard Deviation: ${formatValue(col, s.stdDev)}
   - Coefficient of Variation: ${s.cv.toFixed(1)}% (${s.variability} variability)
@@ -1700,8 +1731,8 @@ Each insight MUST include:
 2. Specific numbers, percentages, or metrics from the statistics above (use actual percentiles, averages, top/bottom values)
 3. Explanation of WHY this matters to the business
 4. Actionable suggestion starting with "**Actionable Suggestion:**" that includes:
-   - Explicit numeric targets or thresholds (e.g., "target ${summary.numericColumns[0]} above P75 value of X", "maintain between P25-P75 range")
-   - Specific improvement goals (e.g., "increase by X%", "reduce by Y units", "achieve P90 level of Z")
+   - Explicit numeric targets or thresholds (e.g., "target ${summary.numericColumns[0]} above ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}", "maintain between ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p25 || 0)}-${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}")
+   - Specific improvement goals (e.g., "increase by X%", "reduce by Y units", "achieve ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p90 || 0)}")
    - Quantified benchmarks (e.g., "reach top 10% performance of ${topBottomStats[summary.numericColumns[0]]?.top[0]?.value.toFixed(2) || 'target'}")
    - Measurable action items with specific numbers
 
@@ -1712,11 +1743,12 @@ CRITICAL REQUIREMENTS:
 - Use ACTUAL numbers from the statistics above (percentiles, averages, top/bottom values)
 - Suggestions must be measurable and quantifiable with specific targets
 - Include specific improvement percentages or absolute values
-- Reference actual percentile values (P75, P90) as targets
+- NEVER use percentile labels like "P75", "P90", "P25", "P50", "P75 level", "P90 level", "P75 value", "P90 value" in your output
+- ONLY use the numeric values themselves (e.g., "increase to ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}" NOT "increase to P75 level (${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)})")
 - No vague language - use specific numbers like "increase to ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}" or "maintain between ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p25 || 0)}-${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}"
 
 Example:
-**Revenue Concentration Risk:** The top 3 products account for 78% of total revenue ($2.4M out of $3.1M), indicating high dependency. Average revenue per product is $X, with top performer at $Y (P90=${stats.revenue?.p90.toFixed(2) || 'Z'}). **Why it matters:** Over-reliance on few products creates vulnerability to market shifts or competitive pressure. **Actionable Suggestion:** Diversify revenue streams by investing in product development for the remaining portfolio. Target: Increase bottom 50% products' revenue by 25% to reach P50 level (${stats.revenue?.median.toFixed(2) || 'target'}) within 12 months, aiming for 60/40 split between top and bottom performers.
+**Revenue Concentration Risk:** The top 3 products account for 78% of total revenue ($2.4M out of $3.1M), indicating high dependency. Average revenue per product is $X, with top performer at $Y. **Why it matters:** Over-reliance on few products creates vulnerability to market shifts or competitive pressure. **Actionable Suggestion:** Diversify revenue streams by investing in product development for the remaining portfolio. Target: Increase bottom 50% products' revenue by 25% to reach ${stats.revenue?.median.toFixed(2) || 'target'} within 12 months, aiming for 60/40 split between top and bottom performers.
 
 Output as JSON array:
 {
@@ -1731,7 +1763,7 @@ Output as JSON array:
     messages: [
       {
         role: 'system',
-        content: 'You are a senior business analyst. Provide detailed, quantitative insights with specific metrics and actionable suggestions. Output valid JSON.',
+        content: 'You are a senior business analyst. Provide detailed, quantitative insights with specific metrics and actionable suggestions. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level, P75 value, P90 value - only use numeric values. Output valid JSON.',
       },
       {
         role: 'user',
@@ -1836,7 +1868,8 @@ export async function generateGeneralAnswer(
   summary: DataSummary,
   sessionId?: string,
   preParsedQuery?: ParsedQuery | null,
-  preTransformationNotes?: string[]
+  preTransformationNotes?: string[],
+  chatInsights?: Insight[]
 ): Promise<{ answer: string; charts?: ChartSpec[]; insights?: Insight[] }> {
   // Detect explicit axis hints for any chart request (including secondary Y-axis)
   const parseExplicitAxes = (q: string): { x?: string; y?: string; y2?: string } => {
@@ -1966,7 +1999,7 @@ export async function generateGeneralAnswer(
         return { answer: `No valid data points found. Please check that column "${explicitY2}" exists and contains numeric data.` };
       }
       
-      const insights = await generateChartInsights(updatedChart, chartData, summary);
+      const insights = await generateChartInsights(updatedChart, chartData, summary, chatInsights);
       
       return withNotes({
         answer: `I've added ${explicitY2} on the secondary Y-axis. The chart now shows ${previousChart.y} on the left axis and ${explicitY2} on the right axis.`,
@@ -2006,7 +2039,7 @@ export async function generateGeneralAnswer(
         
         const chartData = processChartData(workingData, dualAxisSpec);
         if (chartData.length > 0) {
-          const insights = await generateChartInsights(dualAxisSpec, chartData, summary);
+          const insights = await generateChartInsights(dualAxisSpec, chartData, summary, chatInsights);
           return withNotes({
             answer: `I've created a line chart with ${primaryY} on the left axis and ${explicitY2} on the right axis.`,
             charts: [{
@@ -2171,7 +2204,7 @@ export async function generateGeneralAnswer(
     
     // Store additional variables in a custom field (we'll need to extend schema later)
     // For now, we'll include them in the data and use y2Label to indicate multiple
-    const insights = await generateChartInsights(spec, enrichedData, summary);
+    const insights = await generateChartInsights(spec, enrichedData, summary, chatInsights);
     
     const answer = variablesToAdd.length === 1
       ? `I've added ${firstVariable} on the secondary Y-axis. The chart now shows ${primaryY} on the left axis and ${firstVariable} on the right axis.`
@@ -2353,7 +2386,7 @@ export async function generateGeneralAnswer(
       };
     }
     
-    const insights = await generateChartInsights(spec, processed, summary);
+    const insights = await generateChartInsights(spec, processed, summary, chatInsights);
     const answer = `I've created a line chart with ${var1} on the left axis and ${var2} on the right axis, plotted over ${xAxis}.`;
     
     return withNotes({
@@ -2500,7 +2533,7 @@ export async function generateGeneralAnswer(
       return { answer: `No valid data points found for line chart. Please check that columns "${andQuery.var1}" and "${andQuery.var2}" contain numeric data.` };
     }
     
-    const lineInsights = await generateChartInsights(lineSpec, lineData, summary);
+    const lineInsights = await generateChartInsights(lineSpec, lineData, summary, chatInsights);
     
     const charts: ChartSpec[] = [{
       ...lineSpec,
@@ -2600,8 +2633,8 @@ export async function generateGeneralAnswer(
       return { answer: `No valid data points found for line chart. Please check that columns "${vsQuery.var1}" and "${vsQuery.var2}" contain numeric data.` };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
-    const lineInsights = await generateChartInsights(lineSpec, lineData, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
+    const lineInsights = await generateChartInsights(lineSpec, lineData, summary, chatInsights);
     
     const charts: ChartSpec[] = [
       {
@@ -2822,6 +2855,7 @@ If the question requests a chart or visualization, generate appropriate chart sp
 CHART GUIDELINES:
 - You can use ANY column (categorical or numeric) for x or y
 - Pie charts: Use categorical column for x, numeric column for y, aggregate "sum" or "count"
+  - IMPORTANT: If user explicitly asks for pie chart "across months", "by month", or "for [variable] across [date column]", use the date column for x-axis and set aggregate to "sum"
 - Bar charts: Can use categorical or numeric for x, numeric for y
 - Line/Area: Typically numeric or date for x, numeric for y
 - Scatter: Numeric for both x and y
@@ -2887,6 +2921,11 @@ TECHNICAL RULES:
     let processedCharts: ChartSpec[] | undefined;
 
     if (result.charts && Array.isArray(result.charts)) {
+      // Check if user explicitly wants pie chart across months/dates
+      const questionLower = question.toLowerCase();
+      const wantsPieAcrossMonths = /\bpie\s+chart.*(?:across|by|for).*(?:month|date|time)\b/i.test(question) ||
+                                   /\bpie\s+chart.*(?:month|date|time).*(?:across|by|for)\b/i.test(question);
+      
       // Sanitize chart specs
       const sanitized = result.charts.map((spec: any) => {
         let x = spec.x;
@@ -2897,16 +2936,33 @@ TECHNICAL RULES:
         if (typeof x === 'object' && x !== null) x = x.name || x.value || String(x);
         if (typeof y === 'object' && y !== null) y = y.name || y.value || String(y);
         
+        // For pie charts when user explicitly asks "across months", use date column and ensure aggregation
+        if (spec.type === 'pie' && wantsPieAcrossMonths && summary.dateColumns.length > 0) {
+          const dateCol = summary.dateColumns[0] || findMatchingColumn('Month', availableColumns) || findMatchingColumn('Date', availableColumns);
+          if (dateCol) {
+            console.log(`   Pie chart requested across months - using date column "${dateCol}" for X-axis`);
+            x = dateCol;
+            // Ensure aggregate is set to 'sum' if not already specified
+            if (!spec.aggregate || spec.aggregate === 'none') {
+              spec.aggregate = 'sum';
+            }
+          }
+        }
+        
         // Apply explicit axis overrides from the question if provided
         const finalX = explicitX || String(x || '');
         const finalY = explicitY || String(y || '');
 
         // Sanitize aggregate field to only allow valid enum values
         let aggregate = spec.aggregate || 'none';
+        // For pie charts, default to 'sum' if not specified (especially for date-based grouping)
+        if (spec.type === 'pie' && aggregate === 'none') {
+          aggregate = 'sum';
+        }
         const validAggregates = ['sum', 'mean', 'count', 'none'];
         if (!validAggregates.includes(aggregate)) {
-          console.warn(`⚠️ Invalid aggregate value "${aggregate}", defaulting to "none"`);
-          aggregate = 'none';
+          console.warn(`⚠️ Invalid aggregate value "${aggregate}", defaulting to "sum" for pie charts or "none" for others`);
+          aggregate = spec.type === 'pie' ? 'sum' : 'none';
         }
 
         return {
@@ -3079,7 +3135,7 @@ TECHNICAL RULES:
         console.log(`   Final chart spec: x="${spec.x}", y="${spec.y}"`);
         const processedData = processChartData(workingData, spec);
         console.log(`   Processed data rows: ${processedData.length}`);
-        const chartInsights = await generateChartInsights(spec, processedData, summary);
+        const chartInsights = await generateChartInsights(spec, processedData, summary, chatInsights);
         
         return {
           ...spec,

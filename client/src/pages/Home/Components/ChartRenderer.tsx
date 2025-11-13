@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Filter, Plus, X } from 'lucide-react';
@@ -220,7 +219,10 @@ export function ChartRenderer({
   }, [enableFilters, effectiveFilters, originalData]);
 
   const filtersApplied = enableFilters && hasActiveFilters(effectiveFilters);
-  const chartData = enableFilters ? filteredData : originalData;
+  const baseChartData = enableFilters ? filteredData : originalData;
+  
+  const chartData = baseChartData;
+  
   const showNoDataState = chartData.length === 0;
 
   const activeFilterChips = useMemo(() => {
@@ -361,11 +363,11 @@ export function ChartRenderer({
   );
 
   const handleNumericBoundsChange = useCallback(
-    (
-      definition: Extract<ChartFilterDefinition, { type: 'numeric' }>,
-      boundary: 'min' | 'max',
-      value?: number
-    ) => {
+    (definition: ChartFilterDefinition, boundary: 'min' | 'max', value?: number) => {
+      if (definition.type !== 'numeric') {
+        return;
+      }
+
       updateFilters((prev) => {
         const next: ActiveChartFilters = { ...prev };
         const existing = next[definition.key];
@@ -413,7 +415,11 @@ export function ChartRenderer({
   );
 
   const handleNumericSliderChange = useCallback(
-    (definition: Extract<ChartFilterDefinition, { type: 'numeric' }>, values: number[]) => {
+    (definition: ChartFilterDefinition, values: number[]) => {
+      if (definition.type !== 'numeric') {
+        return;
+      }
+
       const [rawMin, rawMax] = values;
       let min = Math.max(definition.min, Math.min(rawMin, definition.max));
       let max = Math.max(definition.min, Math.min(rawMax, definition.max));

@@ -237,6 +237,10 @@ export const sessionsApi = {
   // Get sessions by specific user
   getSessionsByUser: (username: string) => api.get(`/api/sessions/user/${username}`),
   
+  // Update session name by session ID
+  updateSessionName: (sessionId: string, fileName: string) =>
+    api.patch(`/api/sessions/${sessionId}`, { fileName }),
+  
   // Delete session by session ID
   deleteSession: (sessionId: string) => api.delete(`/api/sessions/${sessionId}`),
 };
@@ -246,6 +250,7 @@ export default apiClient;
 // Dashboards API
 export const dashboardsApi = {
   list: () => api.get<{ dashboards: Dashboard[] }>('/api/dashboards'),
+  get: (dashboardId: string) => api.get<Dashboard>(`/api/dashboards/${dashboardId}`),
   create: (name: string, charts?: ChartSpec[]) =>
     api.post<Dashboard>('/api/dashboards', { name, charts }),
   remove: (dashboardId: string) =>
@@ -262,4 +267,14 @@ export const dashboardsApi = {
     api.patch<Dashboard>(`/api/dashboards/${dashboardId}/sheets/${sheetId}`, { name }),
   rename: (dashboardId: string, name: string) =>
     api.patch<Dashboard>(`/api/dashboards/${dashboardId}`, { name }),
+  updateChartInsightOrRecommendation: (
+    dashboardId: string,
+    chartIndex: number,
+    updates: { keyInsight?: string; recommendation?: string },
+    sheetId?: string
+  ) =>
+    api.patch<Dashboard>(`/api/dashboards/${dashboardId}/charts/${chartIndex}`, {
+      sheetId,
+      ...updates,
+    }),
 };

@@ -1,7 +1,8 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Message, UploadResponse, ChatResponse } from '@shared/schema';
 import { apiRequest, uploadFile } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { getUserEmail } from '@/utils/userStorage';
 
 interface UseHomeMutationsProps {
   sessionId: string | null;
@@ -33,6 +34,8 @@ export const useHomeMutations = ({
   setMessages,
 }: UseHomeMutationsProps) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const userEmail = getUserEmail();
 
   const sanitizeMarkdown = (text: string) =>
     text
@@ -71,6 +74,12 @@ export const useHomeMutations = ({
       };
       
       setMessages([initialMessage]);
+      
+      // Invalidate sessions query to refresh the analysis list
+      if (userEmail) {
+        queryClient.invalidateQueries({ queryKey: ['sessions', userEmail] });
+        console.log('🔄 Invalidated sessions query for user:', userEmail);
+      }
       
       toast({
         title: 'Analysis Complete',

@@ -44,7 +44,9 @@ export async function analyzeCorrelations(
   data: Record<string, any>[],
   targetVariable: string,
   numericColumns: string[],
-  filter: 'all' | 'positive' | 'negative' = 'all'
+  filter: 'all' | 'positive' | 'negative' = 'all',
+  sortOrder?: 'ascending' | 'descending',
+  chatInsights?: Insight[]
 ): Promise<{ charts: ChartSpec[]; insights: Insight[] }> {
   console.log('=== CORRELATION ANALYSIS DEBUG ===');
   console.log('Target variable:', targetVariable);
@@ -190,9 +192,18 @@ export async function analyzeCorrelations(
     });
     console.log('=== END BAR CHART DEBUG ===');
     
-    // Sort by correlation value (ascending) for better visualization
-    // This shows negative correlations on left, positive on right
-    const sortedForBar = [...topCorrelations].sort((a, b) => a.correlation - b.correlation);
+    // Sort by correlation value only if user explicitly requested a sort order
+    let sortedForBar: typeof topCorrelations;
+    if (sortOrder === 'descending') {
+      // Descending: highest to lowest (positive to negative)
+      sortedForBar = [...topCorrelations].sort((a, b) => b.correlation - a.correlation);
+    } else if (sortOrder === 'ascending') {
+      // Ascending: lowest to highest (negative to positive)
+      sortedForBar = [...topCorrelations].sort((a, b) => a.correlation - b.correlation);
+    } else {
+      // No explicit sort order requested - use default order (already sorted by absolute value)
+      sortedForBar = topCorrelations;
+    }
     
     const correlationBarChart: ChartSpec = {
       type: 'bar',
@@ -234,7 +245,7 @@ export async function analyzeCorrelations(
 
     const chartsWithInsights = await Promise.all(
       charts.map(async (c) => {
-        const chartInsights = await generateChartInsights(c, c.data || [], summaryStub);
+        const chartInsights = await generateChartInsights(c, c.data || [], summaryStub, chatInsights);
         return { ...c, keyInsight: chartInsights.keyInsight, recommendation: chartInsights.recommendation } as ChartSpec;
       })
     );
@@ -379,8 +390,8 @@ async function generateCorrelationInsights(
         const targetIsPercent = data.some(row => typeof row[targetVariable] === 'string' && row[targetVariable].includes('%'));
         
         quantifiedStats += `\n${corr.variable} (r=${corr.correlation.toFixed(2)}):
-- Factor range: ${formatValue(factorMin, factorIsPercent)} to ${formatValue(factorMax, factorIsPercent)} (avg: ${formatValue(factorAvg, factorIsPercent)}, P25-P75: ${formatValue(factorP25, factorIsPercent)}-${formatValue(factorP75, factorIsPercent)})
-- Target range: ${formatValue(targetMin, targetIsPercent)} to ${formatValue(targetMax, targetIsPercent)} (avg: ${formatValue(targetAvg, targetIsPercent)}, P75: ${formatValue(targetP75, targetIsPercent)}, P90: ${formatValue(targetP90, targetIsPercent)})
+- Factor range: ${formatValue(factorMin, factorIsPercent)} to ${formatValue(factorMax, factorIsPercent)} (avg: ${formatValue(factorAvg, factorIsPercent)}, 25th-75th percentile range: ${formatValue(factorP25, factorIsPercent)}-${formatValue(factorP75, factorIsPercent)})
+- Target range: ${formatValue(targetMin, targetIsPercent)} to ${formatValue(targetMax, targetIsPercent)} (avg: ${formatValue(targetAvg, targetIsPercent)}, 75th percentile: ${formatValue(targetP75, targetIsPercent)}, 90th percentile: ${formatValue(targetP90, targetIsPercent)})
 ${optimalFactorRange ? `- Optimal ${corr.variable} range for top ${targetVariable} performers: ${formatValue(optimalFactorRange.min, factorIsPercent)}-${formatValue(optimalFactorRange.max, factorIsPercent)} (avg: ${formatValue(optimalFactorRange.avg, factorIsPercent)})` : ''}
 `;
       }
@@ -419,7 +430,8 @@ Write 5-7 insights. Each must include:
    - Keep the current contextual suggestion (explaining the relationship)
    - ADD a quantified suggestion with specific targets: "To improve ${targetVariable} to [target value], adjust [factor variable] to [specific value/range]"
    - Use specific numbers from the quantified statistics above (optimal ranges, percentiles, averages)
-   - Example format: "**Current suggestion:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to P75 level ([target value]), adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
+   - NEVER use percentile labels like "P75", "P90", "P25", "P75 level", "P90 level", "P75 value", "P90 value" - ONLY use the numeric values themselves
+   - Example format: "**Current suggestion:** [explain relationship]. **Quantified Action:** To improve ${targetVariable} to [target value], adjust [factor] from current average ([current]) to optimal range ([optimal range]) or target value ([target value])."
 5. Reminder that correlation != causation
 
 Output JSON only: {"insights":[{"text":"..."}]}`;

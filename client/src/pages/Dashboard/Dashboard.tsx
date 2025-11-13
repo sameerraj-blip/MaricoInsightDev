@@ -11,12 +11,21 @@ export default function Dashboard() {
     setCurrentDashboard, 
     deleteDashboard,
     removeChartFromDashboard,
+    fetchDashboardById,
     status,
     refetch,
   } = useDashboardContext();
 
-  const handleViewDashboard = (dashboard: DashboardData) => {
-    setCurrentDashboard(dashboard);
+  const handleViewDashboard = async (dashboard: DashboardData) => {
+    // Fetch fresh dashboard data to get updated lastOpenedAt
+    try {
+      const freshDashboard = await fetchDashboardById(dashboard.id);
+      setCurrentDashboard(freshDashboard);
+    } catch (error) {
+      // Fallback to cached dashboard if fetch fails
+      console.error('Failed to fetch dashboard:', error);
+      setCurrentDashboard(dashboard);
+    }
   };
 
   const handleBackToList = () => {

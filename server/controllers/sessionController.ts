@@ -6,6 +6,7 @@ import {
   getSessionStatistics,
   getChatBySessionIdEfficient,
   deleteSessionBySessionId,
+  updateSessionFileName,
   ChatDocument 
 } from "../lib/cosmosDB.js";
 
@@ -244,6 +245,74 @@ export const getSessionsByUserEndpoint = async (req: Request, res: Response) => 
     console.error('Get sessions by user error:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to fetch sessions by user',
+    });
+  }
+};
+
+// Update session fileName by session ID
+export const updateSessionNameEndpoint = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { fileName } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required' });
+    }
+    
+    if (!fileName || typeof fileName !== 'string' || fileName.trim().length === 0) {
+      return res.status(400).json({ error: 'File name is required' });
+    }
+
+    // Get username from headers or query parameters
+    const username = req.headers['x-user-email'] || req.query.username;
+    
+    if (!username) {
+      return res.status(400).json({ 
+        error: 'Username is required. Please ensure you are logged in.' 
+      });
+    }
+
+    // Update the session fileName
+    const updatedSession = await updateSessionFileName(sessionId, username as string, fileName.trim());
+    
+    res.json({
+      success: true,
+      message: `Session name updated successfully`,
+      session: {
+        id: updatedSession.id,
+        sessionId: updatedSession.sessionId,
+        fileName: updatedSession.fileName,
+        lastUpdatedAt: updatedSession.lastUpdatedAt,
+      }
+    });
+  } catch (error) {
+    console.error('Update session name error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to update session name';
+    
+    // Check if it's a "not found" error
+    if (errorMessage.includes('not found') || errorMessage.includes('Session not found')) {
+      return res.status(404).json({
+        error: errorMessage
+      });
+    }
+    
+    // Check if it's an unauthorized error
+    if (errorMessage.includes('Unauthorized')) {
+      return res.status(403).json({
+        error: errorMessage
+      });
+    }
+    
+    // Check if it's a CosmosDB initialization error
+    if (errorMessage.includes('not initialized')) {
+      return res.status(503).json({
+        error: 'Database is initializing. Please try again in a moment.',
+        retryAfter: 2
+      });
+    }
+    
+    res.status(500).json({
+      error: errorMessage
     });
   }
 };

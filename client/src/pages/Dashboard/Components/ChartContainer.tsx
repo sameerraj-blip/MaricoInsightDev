@@ -2,22 +2,32 @@ import React, { useRef, useState, useEffect } from 'react';
 import { ChartSpec } from '@shared/schema';
 import { ChartRenderer } from '@/pages/Home/Components/ChartRenderer';
 import { InsightRecommendationTile } from './InsightRecommendationTile';
+import { EditInsightModal } from './EditInsightModal';
 import { Button } from '@/components/ui/button';
 import { Trash2, GripVertical } from 'lucide-react';
 import Draggable, { DraggableData, DraggableEvent } from 'react-draggable';
+import { useToast } from '@/hooks/use-toast';
+import { useDashboardContext } from '../context/DashboardContext';
 
 interface ChartContainerProps {
   chart: ChartSpec;
   index: number;
   dashboardId: string;
+  sheetId?: string;
   onDelete: () => void;
+  onUpdate?: () => void;
 }
 
-export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartContainerProps) {
+export function ChartContainer({ chart, index, dashboardId, sheetId, onDelete, onUpdate }: ChartContainerProps) {
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isEditingInsight, setIsEditingInsight] = useState(false);
+  const [isEditingRecommendation, setIsEditingRecommendation] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  const { updateChartInsightOrRecommendation } = useDashboardContext();
 
   // Load saved position from localStorage, or use default stacked position
   useEffect(() => {
@@ -67,6 +77,64 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
     // Save position to localStorage
     const storageKey = `dashboard-container-pos:${dashboardId}:${index}`;
     localStorage.setItem(storageKey, JSON.stringify({ x: data.x, y: data.y }));
+  };
+
+  const handleSaveInsight = async (text: string) => {
+    setIsSaving(true);
+    try {
+      await updateChartInsightOrRecommendation(
+        dashboardId,
+        index,
+        { keyInsight: text },
+        sheetId
+      );
+      setIsEditingInsight(false);
+      toast({
+        title: 'Success',
+        description: 'Key insight updated successfully.',
+      });
+      // Refetch dashboards to get the updated data
+      if (onUpdate) {
+        await onUpdate();
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to update insight',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveRecommendation = async (text: string) => {
+    setIsSaving(true);
+    try {
+      await updateChartInsightOrRecommendation(
+        dashboardId,
+        index,
+        { recommendation: text },
+        sheetId
+      );
+      setIsEditingRecommendation(false);
+      toast({
+        title: 'Success',
+        description: 'Recommendation updated successfully.',
+      });
+      // Refetch dashboards to get the updated data
+      if (onUpdate) {
+        await onUpdate();
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to update recommendation',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -168,7 +236,11 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
                   overflow: 'hidden',
                 }}
               >
-                <InsightRecommendationTile variant="insight" text={chart.keyInsight} />
+                <InsightRecommendationTile 
+                  variant="insight" 
+                  text={chart.keyInsight} 
+                  onEdit={() => setIsEditingInsight(true)}
+                />
               </div>
             )}
 
@@ -183,7 +255,11 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
                   overflow: 'hidden',
                 }}
               >
-                <InsightRecommendationTile variant="recommendation" text={chart.recommendation} />
+                <InsightRecommendationTile 
+                  variant="recommendation" 
+                  text={chart.recommendation}
+                  onEdit={() => setIsEditingRecommendation(true)}
+                />
               </div>
             )}
 
@@ -200,6 +276,26 @@ export function ChartContainer({ chart, index, dashboardId, onDelete }: ChartCon
           </div>
         </div>
       </div>
+      {chart.keyInsight && (
+        <EditInsightModal
+          isOpen={isEditingInsight}
+          onClose={() => setIsEditingInsight(false)}
+          onSave={handleSaveInsight}
+          title="Key Insight"
+          initialText={chart.keyInsight}
+          isLoading={isSaving}
+        />
+      )}
+      {chart.recommendation && (
+        <EditInsightModal
+          isOpen={isEditingRecommendation}
+          onClose={() => setIsEditingRecommendation(false)}
+          onSave={handleSaveRecommendation}
+          title="Suggestion"
+          initialText={chart.recommendation}
+          isLoading={isSaving}
+        />
+      )}
     </Draggable>
   );
 }

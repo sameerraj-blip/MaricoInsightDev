@@ -225,6 +225,7 @@ export const dashboardSchema = z.object({
   name: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
+  lastOpenedAt: z.number().optional(), // Track when dashboard was last accessed
   charts: z.array(chartSpecSchema), // Keep for backward compatibility
   sheets: z.array(dashboardSheetSchema).optional(), // New: multiple sheets
 });

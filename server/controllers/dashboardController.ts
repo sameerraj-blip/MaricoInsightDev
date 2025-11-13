@@ -15,6 +15,7 @@ import {
   removeSheetFromDashboard,
   renameSheet,
   renameDashboard,
+  updateChartInsightOrRecommendation,
 } from "../lib/cosmosDB.js";
 
 export const createDashboardController = async (req: Request, res: Response) => {
@@ -40,6 +41,20 @@ export const listDashboardsController = async (req: Request, res: Response) => {
     res.json({ dashboards });
   } catch (error: any) {
     res.status(500).json({ error: error?.message || 'Failed to fetch dashboards' });
+  }
+};
+
+export const getDashboardController = async (req: Request, res: Response) => {
+  try {
+    const username = (req.query.username || req.headers['x-user-email'] || 'anonymous@example.com') as string;
+    const { dashboardId } = req.params as { dashboardId: string };
+    const dashboard = await getDashboardById(dashboardId, username);
+    if (!dashboard) {
+      return res.status(404).json({ error: 'Dashboard not found' });
+    }
+    res.json(dashboard);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to fetch dashboard' });
   }
 };
 
@@ -148,6 +163,42 @@ export const removeChartFromDashboardController = async (req: Request, res: Resp
     res.json(updated);
   } catch (error: any) {
     res.status(400).json({ error: error?.message || 'Failed to remove chart' });
+  }
+};
+
+export const updateChartInsightOrRecommendationController = async (req: Request, res: Response) => {
+  try {
+    const username = (req.body.username || req.headers['x-user-email'] || 'anonymous@example.com') as string;
+    const { dashboardId, chartIndex: chartIndexParam } = req.params as { dashboardId: string; chartIndex: string };
+    const { sheetId, keyInsight, recommendation } = req.body;
+    const chartIndex = parseInt(chartIndexParam, 10);
+
+    if (isNaN(chartIndex) || chartIndex < 0) {
+      return res.status(400).json({ error: 'Valid chartIndex is required' });
+    }
+
+    if (keyInsight === undefined && recommendation === undefined) {
+      return res.status(400).json({ error: 'Either keyInsight or recommendation must be provided' });
+    }
+
+    const updates: { keyInsight?: string; recommendation?: string } = {};
+    if (keyInsight !== undefined) {
+      updates.keyInsight = typeof keyInsight === 'string' ? keyInsight : undefined;
+    }
+    if (recommendation !== undefined) {
+      updates.recommendation = typeof recommendation === 'string' ? recommendation : undefined;
+    }
+
+    const updated = await updateChartInsightOrRecommendation(
+      dashboardId,
+      username,
+      chartIndex,
+      sheetId,
+      updates
+    );
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: error?.message || 'Failed to update chart insight or recommendation' });
   }
 };
 

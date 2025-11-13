@@ -1,10 +1,11 @@
-import { ChartSpec, DataSummary } from '../../shared/schema.js';
+import { ChartSpec, DataSummary, Insight } from '../../shared/schema.js';
 import { openai, MODEL } from './openai.js';
 
 export async function generateChartInsights(
   chartSpec: ChartSpec,
   chartData: Record<string, any>[],
-  summary: DataSummary
+  summary: DataSummary,
+  chatInsights?: Insight[]
 ): Promise<{ keyInsight: string; recommendation: string }> {
   if (!chartData || chartData.length === 0) {
     return {
@@ -169,11 +170,11 @@ export async function generateChartInsights(
     if (xInTop20.length > 0) {
       const xLow = isNaN(xLow20) ? roundSmart(percentile(numericX, 0.25)) : roundSmart(xLow20);
       const xHigh = isNaN(xHigh20) ? roundSmart(percentile(numericX, 0.75)) : roundSmart(xHigh20);
-      recommendation = `To reach ≥P80 ${chartSpec.y} (${formatY(yP80)}), keep ${chartSpec.x} in ${xLow}–${xHigh}; current avg ≈${roundSmart(avgXTop20)}.`;
+      recommendation = `To reach ${chartSpec.y} ≥${formatY(yP80)}, keep ${chartSpec.x} in ${xLow}–${xHigh}; current avg ≈${roundSmart(avgXTop20)}.`;
     } else {
       const xP25Str = roundSmart(percentile(numericX, 0.25));
       const xP75Str = roundSmart(percentile(numericX, 0.75));
-      recommendation = `Aim for ${chartSpec.y} ≥P75 (${formatY(yP75)}); adjust ${chartSpec.x} toward ${xP25Str}–${xP75Str}.`;
+      recommendation = `Aim for ${chartSpec.y} ≥${formatY(yP75)}; adjust ${chartSpec.x} toward ${xP25Str}–${xP75Str}.`;
     }
 
     return { keyInsight, recommendation };
@@ -262,17 +263,26 @@ CRITICAL: This is a CORRELATION/IMPACT ANALYSIS chart.
 X-AXIS STATISTICS (${factorVariable} - what we can change):
 - Range: ${formatX(minX)} to ${formatX(maxX)}
 - Average: ${formatX(avgX)}
-- Median (P50): ${formatX(xP50)}
-- Percentiles: P25=${formatX(xP25)}, P75=${formatX(xP75)}, P90=${formatX(xP90)}
-${xRangeForTopY ? `- Optimal ${factorVariable} range for top Y performers: ${formatX(xRangeForTopY.min)}-${formatX(xRangeForTopY.max)} (avg: ${formatX(avgXForTopY)}, P25-P75: ${formatX(xRangeForTopY.p25)}-${formatX(xRangeForTopY.p75)})` : ''}
+- Median: ${formatX(xP50)}
+- 25th percentile: ${formatX(xP25)}, 75th percentile: ${formatX(xP75)}, 90th percentile: ${formatX(xP90)}
+${xRangeForTopY ? `- Optimal ${factorVariable} range for top Y performers: ${formatX(xRangeForTopY.min)}-${formatX(xRangeForTopY.max)} (avg: ${formatX(avgXForTopY)}, 25th-75th percentile range: ${formatX(xRangeForTopY.p25)}-${formatX(xRangeForTopY.p75)})` : ''}
 
 SUGGESTION FORMAT:
 - Must explain how to CHANGE ${factorVariable} (X-axis) to IMPROVE ${targetVariable} (Y-axis)
 - Use specific X-axis values/ranges from statistics above
-- Example: "To improve ${targetVariable} to ${formatY(yP75)} or higher, adjust ${factorVariable} to ${formatX(xRangeForTopY?.p75 || xP75)}"
+- NEVER use percentile labels like "P75", "P90", "P25", "P75 level", "P90 level", "P75 value", "P90 value" - ONLY use the numeric values themselves
+- Example: "To improve ${targetVariable} to ${formatY(yP75)} or higher, adjust ${factorVariable} to ${formatX(xRangeForTopY?.p75 || xP75)}" (NOT "to P75 level (${formatY(yP75)})")
 - Focus on actionable steps: "Adjust ${factorVariable} from current average of ${formatX(avgX)} to target range of ${formatX(xRangeForTopY?.p25 || xP25)}-${formatX(xRangeForTopY?.p75 || xP75)}"
 
 ` : '';
+
+  // Build chat insights context if available
+  const chatInsightsContext = chatInsights && chatInsights.length > 0
+    ? `\n\nRELEVANT CHAT-LEVEL INSIGHTS (use these to inform the chart insight):
+${chatInsights.map((insight, idx) => `${idx + 1}. ${insight.text}`).join('\n')}
+
+IMPORTANT: The keyInsight should be a concise summary (1-2 sentences, ≤220 chars) that relates this specific chart to the relevant chat-level insights above. Focus on insights that mention variables in this chart (${chartSpec.x}, ${chartSpec.y}${isDualAxis ? `, ${y2Label}` : ''}).`
+    : '';
 
   const prompt = `Return JSON with exactly two short fields for this chart: keyInsight and recommendation. Each must be 1–2 sentences (≤220 chars), chart-specific, and include concrete numbers. No bullets.
 
@@ -282,14 +292,14 @@ CHART CONTEXT
 - X: ${chartSpec.x}${isCorrelationChart ? ' (FACTOR)' : ''}
 - Y: ${chartSpec.y}${isCorrelationChart ? ' (TARGET)' : ''}${isDualAxis ? ` | Y2: ${y2Label}` : ''}
 - Points: ${chartData.length}
-- Y stats: ${formatY(minY)}–${formatY(maxY)} (avg ${formatY(avgY)}, P75 ${formatY(yP75)})${isDualAxis ? ` | Y2: ${formatY2(minY2)}–${formatY2(maxY2)} (avg ${formatY2(avgY2)})` : ''}
+- Y stats: ${formatY(minY)}–${formatY(maxY)} (avg ${formatY(avgY)}, 75th percentile: ${formatY(yP75)})${isDualAxis ? ` | Y2: ${formatY2(minY2)}–${formatY2(maxY2)} (avg ${formatY2(avgY2)})` : ''}
 
-${correlationContext}
+${correlationContext}${chatInsightsContext}
 
 OUTPUT JSON (exact keys only):
 {
-  "keyInsight": "1–2 sentences, chart-specific with numbers",
-  "recommendation": "1–2 sentences with a numeric target/range on ${chartSpec.x} or ${chartSpec.y}"
+  "keyInsight": "1–2 sentences, chart-specific with numbers${chatInsights && chatInsights.length > 0 ? ' that summarizes relevant chat insights' : ''}. NEVER use percentile labels like P75, P90, P25 - only use numeric values.",
+  "recommendation": "1–2 sentences with a numeric target/range on ${chartSpec.x} or ${chartSpec.y}. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level - only use the numeric values themselves."
 }`;
 
   try {
@@ -298,7 +308,7 @@ OUTPUT JSON (exact keys only):
       messages: [
         {
           role: 'system',
-          content: 'You are a precise data analyst. Output JSON with exactly two short fields: keyInsight and recommendation. Each must be 1–2 sentences (≤220 chars), chart-specific, include numbers, and be actionable. No bullets.'
+          content: 'You are a precise data analyst. Output JSON with exactly two short fields: keyInsight and recommendation. Each must be 1–2 sentences (≤220 chars), chart-specific, include numbers, and be actionable. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level - only use numeric values. No bullets.'
         },
         { role: 'user', content: prompt },
       ],
@@ -360,7 +370,7 @@ OUTPUT JSON (exact keys only):
           // Build comprehensive recommendation
           let recommendationParts: string[] = [];
           if (!isNaN(y2P75)) {
-            recommendationParts.push(`Target ${y2Label} above the 75th percentile threshold of ${formatY2(y2P75)} to align with top-performing periods`);
+            recommendationParts.push(`Target ${y2Label} above ${formatY2(y2P75)} to align with top-performing periods`);
           }
           if (topPerformersY2.length > 0) {
             const topPeriods = topPerformersY2.slice(0, 2).map(p => `${p.x} (${formatY2(p.y)})`).join(' and ');
@@ -417,7 +427,7 @@ OUTPUT JSON (exact keys only):
           // Build comprehensive recommendation
           let recommendationParts: string[] = [];
           if (!isNaN(yP75)) {
-            recommendationParts.push(`Target ${chartSpec.y} above the 75th percentile threshold of ${formatY(yP75)} to align with top-performing periods`);
+            recommendationParts.push(`Target ${chartSpec.y} above ${formatY(yP75)} to align with top-performing periods`);
           }
           if (topPerformers.length > 0) {
             const topPeriods = topPerformers.slice(0, 2).map(p => `${p.x} (${formatY(p.y)})`).join(' and ');

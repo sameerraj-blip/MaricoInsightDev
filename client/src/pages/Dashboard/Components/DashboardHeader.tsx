@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 
 interface DashboardHeaderProps {
   name: string;
-  createdAt: Date;
-  chartCount: number;
+  lastOpenedAt?: Date;
+  updatedAt: Date; // Use updatedAt as fallback
+  sheetCount: number;
   isExporting: boolean;
   onBack: () => void;
   onExport: () => void;
@@ -15,8 +16,9 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   name,
-  createdAt,
-  chartCount,
+  lastOpenedAt,
+  updatedAt,
+  sheetCount,
   isExporting,
   onBack,
   onExport,
@@ -125,11 +127,13 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mt-1">
           <span className="inline-flex items-center gap-1">
             <Calendar className="h-4 w-4" />
-            Created {createdAt.toLocaleDateString()}
+            Last updated {lastOpenedAt 
+              ? `${lastOpenedAt.toLocaleDateString()} ${lastOpenedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+              : `${updatedAt.toLocaleDateString()} ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
           </span>
           <span className="inline-flex items-center gap-1">
             <BarChart3 className="h-4 w-4" />
-            {chartCount} chart{chartCount === 1 ? '' : 's'}
+            {sheetCount} view{sheetCount === 1 ? '' : 's'}
           </span>
         </div>
       </div>

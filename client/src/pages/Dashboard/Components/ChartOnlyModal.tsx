@@ -113,7 +113,8 @@ export function ChartOnlyModal({
   const chartColor = COLORS[0];
   
   // Use filtered data if available, otherwise use original data
-  const data = enableFilters && chartData ? chartData : chartDataSource;
+  const baseData = enableFilters && Array.isArray(chartData) ? chartData : chartDataSource;
+  const data = Array.isArray(baseData) ? baseData : [];
 
   const renderChart = () => {
     switch (type) {
@@ -457,11 +458,11 @@ export function ChartOnlyModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl w-full max-h-[90vh] overflow-hidden [&>button]:hidden">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <DialogTitle className="text-xl">
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4 gap-4">
+          <DialogTitle className="text-xl truncate flex-1 min-w-0">
             {title}
           </DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {enableFilters && filterDefinitions.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>

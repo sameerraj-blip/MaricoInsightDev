@@ -204,17 +204,24 @@ export class CorrelationHandler extends BaseHandler {
     }
 
     try {
+      // Detect sort order preference
+      const originalQuestion = intent.originalQuestion || intent.customRequest || '';
+      const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low|largest\s+to\s+smallest|biggest\s+to\s+smallest\b/i.test(originalQuestion);
+      const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high|smallest\s+to\s+largest|smallest\s+to\s+biggest\b/i.test(originalQuestion);
+      const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined; // Only set if user explicitly requested
+      
       // Call correlation analyzer
       let { charts, insights } = await analyzeCorrelations(
         context.data,
         targetCol,
         filteredComparisonColumns,
-        filter
+          filter,
+          sortOrder,
+          context.chatInsights
       );
 
       // Post-process: Apply general constraint system (works for ANY relationship type, not just "sister brands")
       // Check if user wants to exclude negative correlations for specific variables
-      const originalQuestion = intent.originalQuestion || intent.customRequest || '';
       const mentionsNegativeImpact = /don'?t\s+want.*negative|no\s+negative\s+impact|exclude.*negative.*impact/i.test(originalQuestion);
       
       // Get variables that should have negative correlations excluded (general-purpose)

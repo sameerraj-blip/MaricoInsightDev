@@ -11,7 +11,11 @@ interface DashboardContextType {
   deleteDashboard: (dashboardId: string) => Promise<void>;
   renameDashboard: (dashboardId: string, name: string) => Promise<DashboardData>;
   renameSheet: (dashboardId: string, sheetId: string, name: string) => Promise<DashboardData>;
+  addSheet: (dashboardId: string, name: string) => Promise<DashboardData>;
+  removeSheet: (dashboardId: string, sheetId: string) => Promise<DashboardData>;
+  updateChartInsightOrRecommendation: (dashboardId: string, chartIndex: number, updates: { keyInsight?: string; recommendation?: string }, sheetId?: string) => Promise<DashboardData>;
   getDashboardById: (dashboardId: string) => DashboardData | undefined;
+  fetchDashboardById: (dashboardId: string) => Promise<DashboardData>;
   status: {
     isLoading: boolean;
     isFetching: boolean;

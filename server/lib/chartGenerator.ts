@@ -228,31 +228,47 @@ export function processChartData(
                                    (data.length > 0 && data[0].hasOwnProperty('variable') && data[0].hasOwnProperty('correlation'));
     
     if (isCorrelationBarChart) {
-      // Correlation bar chart - data is already processed, just sort and return
-      console.log(`   Processing correlation bar chart (data already processed)`);
+      // Correlation bar chart - data is already processed, just return as-is
+      // The sorting is already done in correlationAnalyzer.ts based on the requested order
+      console.log(`   Processing correlation bar chart (data already processed and sorted)`);
       const result = data
         .map(row => ({
           variable: row.variable || row[xCol],
           correlation: toNumber(row.correlation || row[yCol]),
         }))
-        .filter(row => !isNaN(row.correlation))
-        .sort((a, b) => {
-          // Sort by absolute correlation value (descending) to show strongest correlations first
-          return Math.abs(b.correlation) - Math.abs(a.correlation);
-        });
+        .filter(row => !isNaN(row.correlation));
       
       console.log(`   Correlation bar chart result: ${result.length} bars`);
       return result;
     }
     
-    // Regular bar chart - aggregate and get top 10
+    // Regular bar chart - aggregate and sort appropriately
     console.log(`   Processing bar chart with aggregation: ${aggregate || 'sum'}`);
     const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum');
     console.log(`   Aggregated data points: ${aggregated.length}`);
     
-    const result = aggregated
-      .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
-      .slice(0, 10);
+    // Check if X column contains dates by:
+    // 1. Checking if column name suggests it's a date column
+    // 2. Testing a sample of values to see if they parse as dates
+    const xColLower = xCol.toLowerCase();
+    const nameSuggestsDate = /\b(date|month|week|year|time|period)\b/i.test(xColLower);
+    const sampleXValues = aggregated.slice(0, Math.min(10, aggregated.length)).map(row => String(row[xCol]));
+    const dateParseCount = sampleXValues.filter(val => parseDate(val) !== null).length;
+    const hasDates = nameSuggestsDate || (dateParseCount >= Math.min(3, sampleXValues.length * 0.5));
+    
+    let result: Record<string, any>[];
+    if (hasDates) {
+      // X-axis is dates - sort chronologically by date
+      console.log(`   X-axis contains dates (${dateParseCount}/${sampleXValues.length} samples parsed as dates), sorting chronologically`);
+      result = aggregated
+        .sort((a, b) => compareValues(a[xCol], b[xCol]))
+        .slice(0, 50); // Allow more points for time series
+    } else {
+      // X-axis is not dates - sort by Y value (descending) and take top 10
+      result = aggregated
+        .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
+        .slice(0, 10);
+    }
     
     console.log(`   Bar chart result: ${result.length} bars`);
     return result;

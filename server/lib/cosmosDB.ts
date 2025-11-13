@@ -319,6 +319,38 @@ export const deleteChatDocument = async (chatId: string, username: string): Prom
   }
 };
 
+// Update session fileName by session ID
+export const updateSessionFileName = async (
+  sessionId: string,
+  username: string,
+  newFileName: string
+): Promise<ChatDocument> => {
+  try {
+    // Get the chat document by sessionId
+    const chatDocument = await getChatBySessionIdEfficient(sessionId);
+    
+    if (!chatDocument) {
+      throw new Error(`Session not found for sessionId: ${sessionId}`);
+    }
+    
+    // Verify the username matches
+    if (chatDocument.username !== username) {
+      throw new Error('Unauthorized: Session does not belong to this user');
+    }
+    
+    // Update the fileName
+    chatDocument.fileName = newFileName.trim();
+    
+    // Update the document
+    const updated = await updateChatDocument(chatDocument);
+    console.log(`✅ Updated session fileName: ${sessionId} -> ${newFileName}`);
+    return updated;
+  } catch (error) {
+    console.error("❌ Failed to update session fileName:", error);
+    throw error;
+  }
+};
+
 // Delete chat document by session ID
 export const deleteSessionBySessionId = async (sessionId: string, username: string): Promise<void> => {
   try {
@@ -553,7 +585,15 @@ export const getUserDashboards = async (username: string): Promise<Dashboard[]> 
 export const getDashboardById = async (id: string, username: string): Promise<Dashboard | null> => {
   try {
     const { resource } = await dashboardsContainer.item(id, username).read();
-    return resource as unknown as Dashboard;
+    const dashboard = resource as unknown as Dashboard;
+    
+    // Update lastOpenedAt when dashboard is accessed
+    if (dashboard) {
+      dashboard.lastOpenedAt = Date.now();
+      return await updateDashboard(dashboard);
+    }
+    
+    return dashboard;
   } catch (error: any) {
     if (error.code === 404) return null;
     throw error;
@@ -830,6 +870,69 @@ export const removeChartFromDashboard = async (
           });
         });
       }
+    }
+  }
+
+  return updateDashboard(dashboard);
+};
+
+export const updateChartInsightOrRecommendation = async (
+  id: string,
+  username: string,
+  chartIndex: number,
+  sheetId: string | undefined,
+  updates: { keyInsight?: string; recommendation?: string }
+): Promise<Dashboard> => {
+  const dashboard = await getDashboardById(id, username);
+  if (!dashboard) throw new Error("Dashboard not found");
+
+  // Initialize sheets if not present (backward compatibility)
+  if (!dashboard.sheets || dashboard.sheets.length === 0) {
+    dashboard.sheets = [{
+      id: 'default',
+      name: 'Overview',
+      charts: [...dashboard.charts],
+      order: 0,
+    }];
+  }
+
+  // Find the target sheet
+  const targetSheetId = sheetId || dashboard.sheets[0].id;
+  const targetSheet = dashboard.sheets.find(s => s.id === targetSheetId);
+
+  if (!targetSheet) {
+    throw new Error(`Sheet with id ${targetSheetId} not found`);
+  }
+
+  if (chartIndex < 0 || chartIndex >= targetSheet.charts.length) {
+    throw new Error(`Chart index ${chartIndex} is out of range`);
+  }
+
+  const chart = targetSheet.charts[chartIndex];
+
+  // Update the chart's keyInsight or recommendation
+  if (updates.keyInsight !== undefined) {
+    // If empty string, set to undefined to remove it
+    chart.keyInsight = updates.keyInsight === '' ? undefined : updates.keyInsight;
+  }
+  if (updates.recommendation !== undefined) {
+    // If empty string, set to undefined to remove it
+    chart.recommendation = updates.recommendation === '' ? undefined : updates.recommendation;
+  }
+
+  // Also update in the legacy charts array for backward compatibility
+  // Find the matching chart in the main charts array
+  const mainChartIndex = dashboard.charts.findIndex(c => 
+    c.title === chart.title && c.type === chart.type
+  );
+  if (mainChartIndex >= 0) {
+    if (updates.keyInsight !== undefined) {
+      // If empty string, set to undefined to remove it
+      dashboard.charts[mainChartIndex].keyInsight = updates.keyInsight === '' ? undefined : updates.keyInsight;
+    }
+    if (updates.recommendation !== undefined) {
+      // If empty string, set to undefined to remove it
+      dashboard.charts[mainChartIndex].recommendation = updates.recommendation === '' ? undefined : updates.recommendation;
     }
   }
 

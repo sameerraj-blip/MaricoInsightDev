@@ -5,20 +5,21 @@ import * as htmlToImage from 'html-to-image';
 import PptxGenJS from 'pptxgenjs';
 import { DashboardSection, DashboardTile } from '../types';
 import { DashboardHeader } from './DashboardHeader';
-import { DashboardFilters } from './DashboardFilters';
-import { DashboardSectionNav } from './DashboardSectionNav';
 import { DashboardTiles } from './DashboardTiles';
-import { ActiveChartFilters, hasActiveFilters, summarizeChartFilters } from '@/lib/chartFilters';
+import { ActiveChartFilters, hasActiveFilters } from '@/lib/chartFilters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ChevronLeft, ChevronRight, FileText, Edit2, Check, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { ChevronLeft, ChevronRight, FileText, Edit2, Check, X, Trash2, Download, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDashboardContext } from '../context/DashboardContext';
 
 interface DashboardViewProps {
   dashboard: DashboardData;
   onBack: () => void;
-  onDeleteChart: (chartIndex: number) => void;
+  onDeleteChart: (chartIndex: number, sheetId?: string) => void;
   isRefreshing?: boolean;
   onRefresh?: () => Promise<any>;
 }
@@ -32,8 +33,14 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
   const [tileFilters, setTileFilters] = useState<Record<string, ActiveChartFilters>>({});
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editSheetName, setEditSheetName] = useState('');
+  const [deleteSheetDialogOpen, setDeleteSheetDialogOpen] = useState(false);
+  const [sheetToDelete, setSheetToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [selectedSheetIds, setSelectedSheetIds] = useState<Set<string>>(new Set());
+  const [addSheetDialogOpen, setAddSheetDialogOpen] = useState(false);
+  const [newSheetName, setNewSheetName] = useState('');
   const { toast } = useToast();
-  const { renameDashboard, renameSheet, refetch: refetchDashboards } = useDashboardContext();
+  const { renameDashboard, renameSheet, addSheet, removeSheet, refetch: refetchDashboards } = useDashboardContext();
 
   // Get sheets or create default from charts (backward compatibility)
   const sheets = useMemo(() => {
@@ -166,130 +173,245 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
     });
   }, []);
 
-  const dashboardFilterSummary = useMemo(() => {
-    const summary: string[] = [];
-    sections.forEach((section) => {
-      section.tiles.forEach((tile) => {
-        if (tile.kind !== 'chart') return;
-        const filters = tileFilters[tile.id];
-        if (!filters || !hasActiveFilters(filters)) return;
-        const chipSummaries = summarizeChartFilters(filters);
-        if (chipSummaries.length === 0) return;
-        summary.push(`${tile.title}: ${chipSummaries.join(' • ')}`);
+
+  // Handle adding a new sheet
+  const handleAddSheet = async () => {
+    if (!newSheetName.trim()) return;
+    
+    try {
+      const updated = await addSheet(dashboard.id, newSheetName.trim());
+      const newSheet = updated.sheets?.find(s => s.name === newSheetName.trim());
+      
+      if (newSheet) {
+        setActiveSheetId(newSheet.id);
+      }
+      
+      toast({
+        title: 'View Created',
+        description: `View "${newSheetName.trim()}" has been created.`,
       });
-    });
-    return summary;
-  }, [sections, tileFilters]);
-
-  const handleResetAllFilters = useCallback(async () => {
-    setTileFilters({});
-    if (onRefresh) {
-      await onRefresh();
+      
+      setAddSheetDialogOpen(false);
+      setNewSheetName('');
+      
+      // Refetch to get updated dashboard
+      if (onRefresh) {
+        await onRefresh();
+      }
+      await refetchDashboards();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to create view',
+        variant: 'destructive',
+      });
     }
-  }, [onRefresh]);
+  };
 
-  const handleExport = async () => {
+  // Handle export button click - open dialog
+  const handleExportClick = () => {
+    if (sheets.length === 1) {
+      // If only one sheet, export directly
+      handleExport([sheets[0].id]);
+    } else {
+      // Show dialog for sheet selection
+      setSelectedSheetIds(new Set(sheets.map(s => s.id))); // Select all by default
+      setExportDialogOpen(true);
+    }
+  };
+
+  // Handle actual export with selected sheets
+  const handleExport = async (sheetIdsToExport?: string[]) => {
     if (isExporting) return;
-    if (chartTiles.length === 0) {
-      toast({ title: 'Nothing to export', description: 'This dashboard has no content yet.' });
+
+    const sheetsToExport = sheetIdsToExport || Array.from(selectedSheetIds);
+    
+    if (sheetsToExport.length === 0) {
+      toast({ title: 'No views selected', description: 'Please select at least one view to export.' });
+      return;
+    }
+
+    // Get all charts from selected sheets
+    const allCharts: Array<{ sheet: typeof sheets[0]; chartIndex: number; chart: any }> = [];
+    sheetsToExport.forEach(sheetId => {
+      const sheet = sheets.find(s => s.id === sheetId);
+      if (sheet) {
+        sheet.charts.forEach((chart, index) => {
+          allCharts.push({ sheet, chartIndex: index, chart });
+        });
+      }
+    });
+
+    if (allCharts.length === 0) {
+      toast({ title: 'Nothing to export', description: 'Selected views have no content yet.' });
+      setExportDialogOpen(false);
       return;
     }
 
     setIsExporting(true);
+    setExportDialogOpen(false);
 
     try {
-      const chartNodes = Array.from(document.querySelectorAll('[data-dashboard-chart-node]')) as HTMLElement[];
-      if (chartNodes.length === 0) {
-        toast({ title: 'No charts found', description: 'Try refreshing the page and exporting again.' });
-        return;
-      }
-
       const pptx = new PptxGenJS();
       pptx.layout = PPT_LAYOUT;
 
-      const totalSlides = Math.min(chartTiles.length, chartNodes.length);
+      const originalActiveSheetId = activeSheetId;
+      let slideIndex = 0;
 
-      for (let index = 0; index < totalSlides; index++) {
-        const chartTile = chartTiles[index];
-        const chartNode = chartNodes[index];
-        const slide = pptx.addSlide();
+      // Process each selected sheet
+      for (let sheetIndex = 0; sheetIndex < sheetsToExport.length; sheetIndex++) {
+        const sheetId = sheetsToExport[sheetIndex];
+        const sheet = sheets.find(s => s.id === sheetId);
+        if (!sheet || sheet.charts.length === 0) continue;
 
-        let imgData: string | undefined;
-        if (chartNode) {
-          imgData = await htmlToImage.toPng(chartNode, {
-            cacheBust: true,
-            backgroundColor: '#FFFFFF',
-            style: { boxShadow: 'none' },
-          });
-        }
-
-        const leftPad = 0.5;
-        const topPad = 0.6;
-        const imgW = 7.0;
-        const imgH = 4.0;
-
-        if (imgData) {
-          slide.addImage({ data: imgData, x: leftPad, y: topPad, w: imgW, h: imgH });
-        }
-
-        const rightX = leftPad + imgW + 0.4;
-        const colW = 3.2;
-
-        slide.addText(chartTile.title, {
-          x: rightX,
-          y: topPad,
-          w: colW,
-          fontSize: 16,
-          bold: true,
-          color: '1F2937',
-        });
-
-        const insight = insightMap.get(`insight-${chartTile.id}`);
-        if (insight && insight.kind === 'insight') {
-          slide.addText('Key Insight', {
-            x: rightX,
-            y: topPad + 0.4,
-            w: colW,
-            fontSize: 12,
+        // Add a sheet name/title slide before each sheet's content
+        if (sheetsToExport.length > 1) {
+          const titleSlide = pptx.addSlide();
+          titleSlide.addText(sheet.name, {
+            x: 0.5,
+            y: 2.5,
+            w: 9,
+            h: 1,
+            fontSize: 28,
             bold: true,
-            color: '0B63F6',
+            color: '1F2937',
+            align: 'center',
           });
-          slide.addText(insight.narrative, {
-            x: rightX,
-            y: topPad + 0.7,
-            w: colW,
-            h: 2.0,
-            fontSize: 11,
-            color: '111827',
-            wrap: true,
-          });
+          // Add chart count subtitle
+          titleSlide.addText(
+            `${sheet.charts.length} chart${sheet.charts.length !== 1 ? 's' : ''}`,
+            {
+              x: 0.5,
+              y: 3.8,
+              w: 9,
+              h: 0.5,
+              fontSize: 16,
+              color: '6B7280',
+              align: 'center',
+            }
+          );
+          slideIndex++;
         }
 
-        const recommendation = insightMap.get(`action-${chartTile.id}`);
-        if (recommendation && recommendation.kind === 'action') {
-          const recY = topPad + 2.9;
-          slide.addText('Recommendation', {
+        // Switch to this sheet to render its charts
+        setActiveSheetId(sheetId);
+        
+        // Wait for charts to render (small delay to ensure DOM updates)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Get chart nodes for this sheet
+        const chartNodes = Array.from(document.querySelectorAll('[data-dashboard-chart-node]')) as HTMLElement[];
+        
+        if (chartNodes.length === 0) {
+          console.warn(`No chart nodes found for sheet: ${sheet.name}`);
+          continue;
+        }
+
+        // Process each chart in this sheet
+        for (let chartIndex = 0; chartIndex < Math.min(sheet.charts.length, chartNodes.length); chartIndex++) {
+          const chart = sheet.charts[chartIndex];
+          const chartNode = chartNodes[chartIndex];
+          const slide = pptx.addSlide();
+
+          let imgData: string | undefined;
+          if (chartNode) {
+            imgData = await htmlToImage.toPng(chartNode, {
+              cacheBust: true,
+              backgroundColor: '#FFFFFF',
+              style: { boxShadow: 'none' },
+            });
+          }
+
+          const leftPad = 0.5;
+          const topPad = 0.6;
+          const imgW = 7.0;
+          const imgH = 4.0;
+
+          if (imgData) {
+            slide.addImage({ data: imgData, x: leftPad, y: topPad, w: imgW, h: imgH });
+          }
+
+          const rightX = leftPad + imgW + 0.4;
+          const colW = 3.2;
+
+          // Add sheet name if multiple sheets
+          if (sheetsToExport.length > 1) {
+            slide.addText(sheet.name, {
+              x: rightX,
+              y: topPad - 0.3,
+              w: colW,
+              fontSize: 10,
+              color: '6B7280',
+              italic: true,
+            });
+          }
+
+          slide.addText(chart.title || `Chart ${chartIndex + 1}`, {
             x: rightX,
-            y: recY,
+            y: topPad + (sheetsToExport.length > 1 ? 0.1 : 0),
             w: colW,
-            fontSize: 12,
+            fontSize: 16,
             bold: true,
-            color: '059669',
+            color: '1F2937',
           });
-          slide.addText(recommendation.recommendation, {
-            x: rightX,
-            y: recY + 0.3,
-            w: colW,
-            h: 1.8,
-            fontSize: 11,
-            color: '111827',
-            wrap: true,
-          });
+
+          if (chart.keyInsight) {
+            slide.addText('Key Insight', {
+              x: rightX,
+              y: topPad + 0.4 + (sheetsToExport.length > 1 ? 0.1 : 0),
+              w: colW,
+              fontSize: 12,
+              bold: true,
+              color: '0B63F6',
+            });
+            slide.addText(chart.keyInsight, {
+              x: rightX,
+              y: topPad + 0.7 + (sheetsToExport.length > 1 ? 0.1 : 0),
+              w: colW,
+              h: 2.0,
+              fontSize: 11,
+              color: '111827',
+              wrap: true,
+            });
+          }
+
+          if (chart.recommendation) {
+            const recY = topPad + 2.9 + (sheetsToExport.length > 1 ? 0.1 : 0);
+            slide.addText('Recommendation', {
+              x: rightX,
+              y: recY,
+              w: colW,
+              fontSize: 12,
+              bold: true,
+              color: '059669',
+            });
+            slide.addText(chart.recommendation, {
+              x: rightX,
+              y: recY + 0.3,
+              w: colW,
+              h: 1.8,
+              fontSize: 11,
+              color: '111827',
+              wrap: true,
+            });
+          }
+
+          slideIndex++;
         }
       }
 
-      await pptx.writeFile({ fileName: `${dashboard.name || 'dashboard'}.pptx` });
-      toast({ title: 'Export complete', description: 'Your PowerPoint has been downloaded.' });
+      // Restore original active sheet
+      setActiveSheetId(originalActiveSheetId);
+
+      const fileName = sheetsToExport.length === sheets.length 
+        ? `${dashboard.name || 'dashboard'}.pptx`
+        : `${dashboard.name || 'dashboard'}_${sheetsToExport.length}_sheets.pptx`;
+      
+      await pptx.writeFile({ fileName });
+      toast({ 
+        title: 'Export complete', 
+        description: `Your PowerPoint with ${slideIndex} slide${slideIndex !== 1 ? 's' : ''} has been downloaded.` 
+      });
     } catch (err) {
       console.error(err);
       toast({
@@ -302,20 +424,44 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
     }
   };
 
+  // Handle sheet selection in export dialog
+  const handleSheetToggle = (sheetId: string) => {
+    setSelectedSheetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(sheetId)) {
+        next.delete(sheetId);
+      } else {
+        next.add(sheetId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedSheetIds.size === sheets.length) {
+      setSelectedSheetIds(new Set());
+    } else {
+      setSelectedSheetIds(new Set(sheets.map(s => s.id)));
+    }
+  };
+
   return (
     <div className="bg-muted/30 h-[calc(100vh-72px)] flex flex-col overflow-y-auto">
       <div className="flex-shrink-0 px-4 pt-8 pb-4 lg:px-8">
         <DashboardHeader
           name={dashboard.name}
-          createdAt={dashboard.createdAt}
-          chartCount={dashboard.charts.length}
+          lastOpenedAt={dashboard.lastOpenedAt}
+          updatedAt={dashboard.updatedAt}
+          sheetCount={sheets.length}
           isExporting={isExporting}
           onBack={onBack}
-          onExport={handleExport}
+          onExport={handleExportClick}
           onRename={async (newName) => {
             try {
               await renameDashboard(dashboard.id, newName);
-              await refetch?.();
+              if (onRefresh) {
+                await onRefresh();
+              }
               await refetchDashboards();
             } catch (error: any) {
               toast({
@@ -328,19 +474,11 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
           }}
         />
 
-        <div className="mt-6">
-          <DashboardFilters
-            isLoading={isExporting || isRefreshing}
-            onReset={handleResetAllFilters}
-            appliedFilters={dashboardFilterSummary}
-            hasActiveFilters={dashboardFilterSummary.length > 0}
-          />
-        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Collapsible Sheet Sidebar */}
-        {sheets.length > 1 && (
+        {sheets.length > 0 && (
           <>
             <div
               className={cn(
@@ -350,7 +488,20 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
             >
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-between p-4 border-b">
-                  <h3 className="font-semibold text-sm text-foreground">Sheets</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm text-foreground">Views</h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        setNewSheetName('');
+                        setAddSheetDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -381,12 +532,14 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
                         try {
                           await renameSheet(dashboard.id, sheet.id, editSheetName.trim());
                           setEditingSheetId(null);
-                          await refetch?.();
+                          if (onRefresh) {
+                            await onRefresh();
+                          }
                           await refetchDashboards();
                         } catch (error: any) {
                           toast({
                             title: 'Error',
-                            description: error?.message || 'Failed to rename sheet',
+                            description: error?.message || 'Failed to rename view',
                             variant: 'destructive',
                           });
                         }
@@ -406,6 +559,12 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
                           e.preventDefault();
                           handleCancelEdit(e as any);
                         }
+                      };
+
+                      const handleDeleteClick = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        setSheetToDelete({ id: sheet.id, name: sheet.name });
+                        setDeleteSheetDialogOpen(true);
                       };
 
                       return (
@@ -459,15 +618,28 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
                                   {sheet.charts.length} chart{sheet.charts.length !== 1 ? 's' : ''}
                                 </div>
                               </button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleStartEdit}
-                                className={cn("h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0", isActive && "text-primary-foreground")}
-                                aria-label="Rename sheet"
-                              >
-                                <Edit2 className="h-3 w-3" />
-                              </Button>
+                              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={handleStartEdit}
+                                  className={cn("h-6 w-6 flex-shrink-0", isActive && "text-primary-foreground")}
+                                  aria-label="Rename view"
+                                >
+                                  <Edit2 className="h-3 w-3" />
+                                </Button>
+                                {sheets.length > 1 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleDeleteClick}
+                                    className={cn("h-6 w-6 flex-shrink-0 hover:text-destructive", isActive && "text-primary-foreground hover:text-destructive")}
+                                    aria-label="Delete view"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
                             </>
                           )}
                         </div>
@@ -495,18 +667,6 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
         )}
 
         <div className="flex-1 min-h-0 flex flex-col gap-8 px-4 pb-8 lg:px-8 overflow-hidden">
-          <div className="flex-shrink-0">
-            <DashboardSectionNav
-              sections={sections.map((section) => ({
-                id: section.id,
-                title: section.title,
-                count: section.tiles.length,
-              }))}
-              activeSectionId={activeSection?.id || sheets[0]?.id || 'overview'}
-              onSelect={(sectionId) => setActiveSheetId(sectionId)}
-            />
-          </div>
-
           <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
             {activeSection ? (
               <section
@@ -532,6 +692,8 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
                   }}
                   filtersByTile={tileFilters}
                   onTileFiltersChange={handleTileFiltersChange}
+                  sheetId={currentSheetId || undefined}
+                  onUpdate={onRefresh}
                 />
               </section>
             ) : (
@@ -542,6 +704,199 @@ export function DashboardView({ dashboard, onBack, onDeleteChart, isRefreshing =
           </div>
         </div>
       </div>
+
+      {/* Export Sheet Selection Dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Dashboard</DialogTitle>
+            <DialogDescription>
+              Select which views you want to export to PowerPoint. You can select multiple views or export the entire dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex items-center space-x-2 pb-2 border-b">
+              <Checkbox
+                id="select-all"
+                checked={selectedSheetIds.size === sheets.length}
+                onCheckedChange={handleSelectAll}
+              />
+              <Label
+                htmlFor="select-all"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Select All ({sheets.length} views)
+              </Label>
+            </div>
+            <div className="space-y-3 max-h-[300px] overflow-y-auto">
+              {sheets.map((sheet) => (
+                <div key={sheet.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`sheet-${sheet.id}`}
+                    checked={selectedSheetIds.has(sheet.id)}
+                    onCheckedChange={() => handleSheetToggle(sheet.id)}
+                  />
+                  <Label
+                    htmlFor={`sheet-${sheet.id}`}
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>{sheet.name}</span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {sheet.charts.length} chart{sheet.charts.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </Label>
+                </div>
+              ))}
+            </div>
+            {selectedSheetIds.size === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-2">
+                Please select at least one view to export.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setExportDialogOpen(false);
+                setSelectedSheetIds(new Set());
+              }}
+              disabled={isExporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleExport()}
+              disabled={isExporting || selectedSheetIds.size === 0}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export {selectedSheetIds.size} View{selectedSheetIds.size !== 1 ? 's' : ''}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Sheet Confirmation Dialog */}
+      <Dialog open={deleteSheetDialogOpen} onOpenChange={setDeleteSheetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete View</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the view "{sheetToDelete?.name}"? This will permanently remove all charts in this view. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteSheetDialogOpen(false);
+                setSheetToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!sheetToDelete) return;
+                
+                const wasActiveSheet = activeSheetId === sheetToDelete.id;
+                
+                try {
+                  await removeSheet(dashboard.id, sheetToDelete.id);
+                  
+                  // If the deleted sheet was active, switch to the first remaining sheet
+                  if (wasActiveSheet) {
+                    const remainingSheets = sheets.filter(s => s.id !== sheetToDelete.id);
+                    if (remainingSheets.length > 0) {
+                      setActiveSheetId(remainingSheets[0].id);
+                    }
+                  }
+                  
+                  toast({
+                    title: 'Sheet Deleted',
+                    description: `Sheet "${sheetToDelete.name}" has been deleted.`,
+                  });
+                  
+                  setDeleteSheetDialogOpen(false);
+                  setSheetToDelete(null);
+                  
+                  // Refetch to get updated dashboard
+                  if (onRefresh) {
+                    await onRefresh();
+                  }
+                  await refetchDashboards();
+                } catch (error: any) {
+                  toast({
+                    title: 'Error',
+                    description: error?.message || 'Failed to delete sheet',
+                    variant: 'destructive',
+                  });
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Sheet Dialog */}
+      <Dialog open={addSheetDialogOpen} onOpenChange={setAddSheetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New View</DialogTitle>
+            <DialogDescription>
+              Create a new view to organize your charts. Enter a name for the view.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="new-sheet-name">View Name</Label>
+            <Input
+              id="new-sheet-name"
+              value={newSheetName}
+              onChange={(e) => setNewSheetName(e.target.value)}
+              placeholder="Enter view name"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newSheetName.trim()) {
+                  e.preventDefault();
+                  handleAddSheet();
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddSheetDialogOpen(false);
+                setNewSheetName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddSheet}
+              disabled={!newSheetName.trim()}
+            >
+              Create View
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
