@@ -113,7 +113,8 @@ export function ChartOnlyModal({
   const chartColor = COLORS[0];
   
   // Use filtered data if available, otherwise use original data
-  const data = enableFilters && chartData ? chartData : chartDataSource;
+  const baseData = enableFilters && Array.isArray(chartData) ? chartData : chartDataSource;
+  const data = Array.isArray(baseData) ? baseData : [];
 
   const renderChart = () => {
     switch (type) {
@@ -394,6 +395,15 @@ export function ChartOnlyModal({
                 }}
                 itemStyle={{ color: 'hsl(var(--foreground))', fontSize: '14px' }}
               />
+              <Legend 
+                verticalAlign="bottom" 
+                height={36}
+                iconType="circle"
+                wrapperStyle={{ 
+                  fontSize: '14px',
+                  color: 'hsl(var(--foreground))'
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         );
@@ -448,11 +458,11 @@ export function ChartOnlyModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl w-full max-h-[90vh] overflow-hidden [&>button]:hidden">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <DialogTitle className="text-xl">
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4 gap-4">
+          <DialogTitle className="text-xl truncate flex-1 min-w-0">
             {title}
           </DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {enableFilters && filterDefinitions.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>
@@ -475,7 +485,7 @@ export function ChartOnlyModal({
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
-                  className="w-80 space-y-4 p-4"
+                  className="w-80 max-h-[80vh] space-y-4 p-4 overflow-y-auto"
                   sideOffset={8}
                 >
                   {filterDefinitions.map((definition) => {
@@ -497,7 +507,7 @@ export function ChartOnlyModal({
                               </Button>
                             )}
                           </div>
-                          <ScrollArea className="max-h-52 pr-2">
+                          <ScrollArea className="h-52 pr-2">
                             <div className="flex flex-col gap-2">
                               {definition.options.map((option) => {
                                 const isChecked =

@@ -198,12 +198,20 @@ export class ComparisonHandler extends BaseHandler {
       
       console.log(`📊 Calculated ${correlations.length} correlations for ranking`);
       
+      // Detect sort order preference
+      const question = intent.originalQuestion || intent.customRequest || '';
+      const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low\b/i.test(question);
+      const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high\b/i.test(question);
+      const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined; // Only set if user explicitly requested
+      
       // Then get charts and insights from correlation analyzer
       const { charts, insights } = await analyzeCorrelations(
         context.data,
         targetCol,
         optionsToCompare,
-        'all' // Get all correlations (positive and negative)
+        'all', // Get all correlations (positive and negative)
+        sortOrder,
+        context.chatInsights
       );
       
       console.log(`📊 Correlation analyzer returned ${charts?.length || 0} charts and ${insights?.length || 0} insights`);

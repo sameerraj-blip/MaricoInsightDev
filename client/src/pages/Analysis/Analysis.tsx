@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@/lib/api';
 import { getUserEmail } from '@/utils/userStorage';
-import { Search, Plus, Calendar, FileText, MessageSquare, BarChart3, Loader2, Trash2 } from 'lucide-react';
+import { Search, Plus, Calendar, FileText, MessageSquare, BarChart3, Loader2, Trash2, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +19,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 
 interface Session {
   id: string;
@@ -50,6 +60,11 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [sessionToEdit, setSessionToEdit] = useState<Session | null>(null);
+  const [editFileName, setEditFileName] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
   const { toast } = useToast();
   const userEmail = getUserEmail();
   const queryClient = useQueryClient();
@@ -70,7 +85,35 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
     },
     enabled: !!userEmail,
     retry: 2,
+    refetchOnWindowFocus: true, // Refetch when window regains focus
+    refetchOnMount: true, // Refetch when component mounts
+    staleTime: 0, // Consider data stale immediately to allow refetching
   });
+
+  // Refetch sessions when page becomes visible or when userEmail changes
+  useEffect(() => {
+    if (!userEmail) return;
+    
+    // Refetch when component mounts or userEmail changes
+    // This ensures fresh data when navigating to this page
+    const timeoutId = setTimeout(() => {
+      refetch();
+    }, 200); // Small delay to ensure component is ready
+    
+    // Listen for visibility changes (when tab becomes active)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && userEmail) {
+        refetch();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userEmail, refetch]);
 
   // Filter sessions based on search query
   useEffect(() => {
@@ -85,12 +128,12 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
 
   // Handle session click
   const handleSessionClick = async (session: Session) => {
+    // Prevent multiple clicks while loading
+    if (loadingSessionId) return;
+    
+    setLoadingSessionId(session.sessionId);
+    
     try {
-      toast({
-        title: 'Loading Session',
-        description: `Loading analysis for ${session.fileName}...`,
-      });
-
       console.log('🔍 Loading session details for:', session.sessionId);
       
       // Fetch session details
@@ -121,6 +164,8 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
         description: 'Failed to load session details. Please try again.',
         variant: 'destructive',
       });
+    } finally {
+      setLoadingSessionId(null);
     }
   };
 
@@ -181,17 +226,60 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
     setSessionToDelete(null);
   };
 
+  // Handle edit button click
+  const handleEditClick = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation(); // Prevent card click event
+    setSessionToEdit(session);
+    setEditFileName(session.fileName);
+    setEditDialogOpen(true);
+  };
+
+  // Handle edit cancel
+  const handleEditCancel = () => {
+    setEditDialogOpen(false);
+    setSessionToEdit(null);
+    setEditFileName('');
+  };
+
+  // Handle edit confirmation
+  const handleEditConfirm = async () => {
+    if (!sessionToEdit || !editFileName.trim()) return;
+
+    setIsUpdating(true);
+    try {
+      await sessionsApi.updateSessionName(sessionToEdit.sessionId, editFileName.trim());
+      
+      toast({
+        title: 'Analysis Name Updated',
+        description: `Analysis name has been updated to "${editFileName.trim()}".`,
+      });
+
+      // Invalidate and refetch sessions
+      await queryClient.invalidateQueries({ queryKey: ['sessions', userEmail] });
+      refetch();
+
+      setEditDialogOpen(false);
+      setSessionToEdit(null);
+      setEditFileName('');
+    } catch (error) {
+      console.error('❌ Failed to update session name:', error);
+      toast({
+        title: 'Error Updating Name',
+        description: error instanceof Error ? error.message : 'Failed to update analysis name. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Format date for display
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
-    return date.toLocaleDateString();
+    const day = date.getDate();
+    const month = date.toLocaleDateString('en-US', { month: 'long' });
+    const year = date.getFullYear();
+    return `${day} ${month} ${year}`;
   };
 
   // Format file name for display
@@ -231,7 +319,7 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
   }
 
   return (
-    <div className="h-[calc(100vh-10vh)] bg-gray-50 flex flex-col">
+    <div className="h-[calc(100vh-10vh)] bg-gray-50 flex flex-col" data-analysis-page>
       <div className="max-w-6xl mx-40 px-6 py-8 flex-1 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -283,12 +371,25 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
               </CardContent>
             </Card>
           ) : (
-            filteredSessions.map((session) => (
+            filteredSessions.map((session) => {
+              const isLoading = loadingSessionId === session.sessionId;
+              return (
               <Card 
                 key={session.id} 
-                className="hover:shadow-md transition-shadow cursor-pointer border-gray-200"
-                onClick={() => handleSessionClick(session)}
+                className={cn(
+                  "hover:shadow-md transition-shadow border-gray-200 relative",
+                  isLoading ? "cursor-wait opacity-75" : "cursor-pointer"
+                )}
+                onClick={() => !isLoading && handleSessionClick(session)}
               >
+                {isLoading && (
+                  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                      <p className="text-sm text-gray-600 font-medium">Loading analysis...</p>
+                    </div>
+                  </div>
+                )}
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -316,35 +417,99 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
                           <span>{session.chartCount} charts</span>
                         </div>
                       </div>
-                      
-                      <div className="text-xs text-gray-500 break-all">
-                        Session ID: {session.sessionId}
-                      </div>
                     </div>
                     
                     <div className="flex items-center gap-4">
                       <div className="text-right text-sm text-gray-500">
-                        <div>{new Date(session.uploadedAt).toLocaleDateString()}</div>
+                        <div>{new Date(session.lastUpdatedAt).toLocaleDateString()}</div>
                         <div className="text-xs">
-                          {new Date(session.uploadedAt).toLocaleTimeString()}
+                          {new Date(session.lastUpdatedAt).toLocaleTimeString()}
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => handleEditClick(e, session)}
+                          disabled={isLoading}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                          title="Edit analysis name"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={(e) => handleDeleteClick(e, session)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          disabled={isLoading}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50"
+                          title="Delete analysis"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))
+              );
+            })
           )}
         </div>
       </div>
+
+      {/* Edit Name Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Analysis Name</DialogTitle>
+            <DialogDescription>
+              Update the name for this analysis session. This will help you identify it more easily.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Analysis Name</Label>
+              <Input
+                id="edit-name"
+                value={editFileName}
+                onChange={(e) => setEditFileName(e.target.value)}
+                placeholder="Enter analysis name"
+                disabled={isUpdating}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && editFileName.trim() && !isUpdating) {
+                    handleEditConfirm();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleEditCancel}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditConfirm}
+              disabled={isUpdating || !editFileName.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

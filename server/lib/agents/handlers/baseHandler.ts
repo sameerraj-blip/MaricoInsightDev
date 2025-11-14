@@ -12,6 +12,7 @@ export interface HandlerContext {
   context: RetrievedContext;
   chatHistory: Message[];
   sessionId: string;
+  chatInsights?: Insight[];
 }
 
 /**

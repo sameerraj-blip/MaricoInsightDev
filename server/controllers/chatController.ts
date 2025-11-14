@@ -28,16 +28,27 @@ export const chatWithAI = async (req: Request, res: Response) => {
     }
 
     console.log('✅ Chat document found, calling answerQuestion()');
+    // Get chat-level insights from the document to inform chart insights
+    const chatLevelInsights = chatDocument.insights && Array.isArray(chatDocument.insights) && chatDocument.insights.length > 0
+      ? chatDocument.insights
+      : undefined;
+    
     // Answer the question using data from CosmosDB
     const result = await answerQuestion(
       chatDocument.rawData, // Use the actual data stored in CosmosDB
       message,
       chatHistory || [],
       chatDocument.dataSummary,
-      sessionId // Pass sessionId for RAG
+      sessionId, // Pass sessionId for RAG
+      chatLevelInsights // Pass chat insights to inform chart insights
     );
 
     // Ensure every chart has per-chart keyInsight and recommendation before validation
+    // Use chat-level insights to inform chart insights (prefer result insights, fallback to document insights)
+    const finalChatInsights = result.insights && Array.isArray(result.insights) && result.insights.length > 0
+      ? result.insights
+      : chatLevelInsights;
+    
     if (result.charts && Array.isArray(result.charts)) {
       try {
         result.charts = await Promise.all(
@@ -45,14 +56,13 @@ export const chatWithAI = async (req: Request, res: Response) => {
             const dataForChart = c.data && Array.isArray(c.data)
               ? c.data
               : processChartData(chatDocument.rawData, c);
-            const insights = (!('keyInsight' in c) || !('recommendation' in c))
-              ? await generateChartInsights(c, dataForChart, chatDocument.dataSummary)
+            const insights = !('keyInsight' in c)
+              ? await generateChartInsights(c, dataForChart, chatDocument.dataSummary, chatLevelInsights)
               : null;
             return {
               ...c,
               data: dataForChart,
               keyInsight: c.keyInsight ?? insights?.keyInsight,
-              recommendation: c.recommendation ?? insights?.recommendation,
             };
           })
         );

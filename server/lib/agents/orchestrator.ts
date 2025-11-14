@@ -37,7 +37,8 @@ export class AgentOrchestrator {
     chatHistory: Message[],
     data: Record<string, any>[],
     summary: DataSummary,
-    sessionId: string
+    sessionId: string,
+    chatInsights?: Insight[]
   ): Promise<{ answer: string; charts?: ChartSpec[]; insights?: Insight[] }> {
     try {
       console.log(`\n🔍 Processing query: "${question}"`);
@@ -78,6 +79,7 @@ export class AgentOrchestrator {
         context,
         chatHistory,
         sessionId,
+        chatInsights,
       };
 
       // Step 6: Route to appropriate handler

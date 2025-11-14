@@ -1,5 +1,6 @@
 import { ChartSpec } from '../../shared/schema.js';
 import { findMatchingColumn } from './agents/utils/columnMatcher.js';
+import { normalizeDateToPeriod, parseFlexibleDate, DatePeriod, isDateColumnName } from './dateUtils.js';
 
 // Helper to clean numeric values (strip %, commas, etc.)
 function toNumber(value: any): number {
@@ -8,39 +9,9 @@ function toNumber(value: any): number {
   return Number(cleaned);
 }
 
-// Helper to parse date strings in various formats
+// Helper to parse date strings - use the flexible date parser
 function parseDate(dateStr: string): Date | null {
-  if (!dateStr) return null;
-  
-  const str = String(dateStr).trim();
-  
-  // Try common date formats
-  // Format: "MMM-YY" or "MMM YY" or "MMM-YYYY" (e.g., "Apr-24", "Apr 24", "Apr-2024")
-  const mmmYyMatch = str.match(/^([A-Za-z]{3})[-/]?(\d{2,4})$/);
-  if (mmmYyMatch) {
-    const monthNames: { [key: string]: number } = {
-      'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
-      'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
-    };
-    const month = monthNames[mmmYyMatch[1].toLowerCase().substring(0, 3)];
-    if (month !== undefined) {
-      let year = parseInt(mmmYyMatch[2]);
-      // If year is 2 digits, convert to 4 digits
-      // Common convention: 00-30 = 2000-2030, 31-99 = 1931-1999
-      if (year < 100) {
-        year = year <= 30 ? 2000 + year : 1900 + year;
-      }
-      return new Date(year, month, 1);
-    }
-  }
-  
-  // Try ISO format or standard date formats
-  const date = new Date(str);
-  if (!isNaN(date.getTime())) {
-    return date;
-  }
-  
-  return null;
+  return parseFlexibleDate(dateStr);
 }
 
 // Helper to compare values for sorting - handles dates properly
@@ -163,28 +134,173 @@ export function processChartData(
   }
 
   if (type === 'pie') {
-    // Aggregate and get top 5 categories
-    console.log(`   Processing pie chart with aggregation: ${aggregate || 'sum'}`);
-    const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum');
-    console.log(`   Aggregated data points: ${aggregated.length}`);
+    // Check if data is already aggregated (if number of unique x values equals number of rows)
+    const uniqueXValues = new Set(data.map(row => String(row[xCol])));
+    const isAlreadyAggregated = uniqueXValues.size === data.length;
     
-    const result = aggregated
-      .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
-      .slice(0, 5);
+    let allData: Record<string, any>[];
     
-    console.log(`   Pie chart result: ${result.length} segments`);
+    // Check if x column is a date column and detect period from data or query
+    const isDateCol = isDateColumnName(xCol);
+    let detectedPeriod: DatePeriod | null = null;
+    if (isDateCol && data.length > 0) {
+      // Sample a few values to detect format
+      const sample = data.slice(0, Math.min(5, data.length)).map(r => String(r[xCol]));
+      // If all samples look like month-year format, use month period
+      if (sample.every(v => /^[A-Za-z]{3}[-/]?\d{2,4}$/i.test(v.trim()))) {
+        detectedPeriod = 'month';
+      } else {
+        // Try to parse as dates to detect period
+        const parsedDates = sample.map(v => parseFlexibleDate(v)).filter(d => d !== null);
+        if (parsedDates.length > 0) {
+          // If we can parse dates, default to month period for pie charts
+          detectedPeriod = 'month';
+        }
+      }
+    }
+    
+    if (isAlreadyAggregated) {
+      // Data is already aggregated, but we may still need to normalize dates
+      console.log(`   Pie chart: Data is already aggregated (${data.length} unique groups)`);
+      
+      if (isDateCol && detectedPeriod) {
+        // Normalize date values even in already-aggregated data
+        console.log(`   Normalizing date values with period: ${detectedPeriod}`);
+        const normalizedMap = new Map<string, { displayLabel: string; values: number[] }>();
+        
+        for (const row of data) {
+          const dateValue = String(row[xCol]);
+          const normalized = normalizeDateToPeriod(dateValue, detectedPeriod);
+          const key = normalized ? normalized.normalizedKey : dateValue;
+          const displayLabel = normalized ? normalized.displayLabel : dateValue;
+          const yValue = toNumber(row[yCol]);
+          
+          if (!isNaN(yValue)) {
+            if (!normalizedMap.has(key)) {
+              normalizedMap.set(key, { displayLabel, values: [] });
+            }
+            normalizedMap.get(key)!.values.push(yValue);
+          }
+        }
+        
+        // Sum up values for each normalized period
+        allData = Array.from(normalizedMap.entries()).map(([key, { displayLabel, values }]) => ({
+          [xCol]: displayLabel,
+          [yCol]: values.reduce((sum, val) => sum + val, 0),
+        })).sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]));
+        
+        console.log(`   After normalization: ${allData.length} unique periods`);
+      } else {
+        // Not a date column or no period detected, use as-is
+      allData = data
+        .map(row => ({
+          [xCol]: row[xCol],
+          [yCol]: toNumber(row[yCol]),
+        }))
+        .filter(row => !isNaN(row[yCol]))
+        .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]));
+      }
+    } else {
+      // Need to aggregate
+      console.log(`   Processing pie chart with aggregation: ${aggregate || 'sum'}`);
+      const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum', detectedPeriod, isDateCol);
+      console.log(`   Aggregated data points: ${aggregated.length}`);
+      
+      allData = aggregated
+        .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]));
+    }
+    
+    // Calculate total of all items to ensure percentages add up to 100%
+    const total = allData.reduce((sum, row) => sum + toNumber(row[yCol]), 0);
+    console.log(`   Total value for all categories: ${total}`);
+    
+    // Take top 5 items
+    const top5 = allData.slice(0, 5);
+    const remaining = allData.slice(5);
+    
+    // Calculate sum of remaining items
+    const remainingSum = remaining.reduce((sum, row) => sum + toNumber(row[yCol]), 0);
+    
+    // Build result: top 5 + "Others" category if there are remaining items
+    const result = [...top5];
+    
+    if (remaining.length > 0 && remainingSum > 0) {
+      // Create "Others" category with the sum of remaining items
+      const othersLabel = `Other ${remaining.length > 1 ? `${remaining.length} items` : 'item'}`;
+      result.push({
+        [xCol]: othersLabel,
+        [yCol]: remainingSum,
+      });
+      console.log(`   Added "Others" category with ${remaining.length} items, sum: ${remainingSum}`);
+    }
+    
+    // Verify total (should be 100% of original total)
+    const resultTotal = result.reduce((sum, row) => sum + toNumber(row[yCol]), 0);
+    console.log(`   Pie chart result: ${result.length} segments (top 5 + ${remaining.length > 0 ? 'Others' : 'none'})`);
+    console.log(`   Result total: ${resultTotal}, Original total: ${total}, Match: ${Math.abs(resultTotal - total) < 0.01 ? '✅' : '⚠️'}`);
+    
     return result;
   }
 
   if (type === 'bar') {
-    // Aggregate and get top 10 for bar charts
+    // Check if this is a correlation bar chart (has 'variable' and 'correlation' columns)
+    // Correlation bar charts already have processed data and shouldn't be aggregated
+    const isCorrelationBarChart = (xCol === 'variable' && yCol === 'correlation') ||
+                                   (data.length > 0 && data[0].hasOwnProperty('variable') && data[0].hasOwnProperty('correlation'));
+    
+    if (isCorrelationBarChart) {
+      // Correlation bar chart - data is already processed, just return as-is
+      // The sorting is already done in correlationAnalyzer.ts based on the requested order
+      console.log(`   Processing correlation bar chart (data already processed and sorted)`);
+      const result = data
+        .map(row => ({
+          variable: row.variable || row[xCol],
+          correlation: toNumber(row.correlation || row[yCol]),
+        }))
+        .filter(row => !isNaN(row.correlation));
+      
+      console.log(`   Correlation bar chart result: ${result.length} bars`);
+      return result;
+    }
+    
+    // Regular bar chart - aggregate and sort appropriately
     console.log(`   Processing bar chart with aggregation: ${aggregate || 'sum'}`);
-    const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum');
+    // Check if x column is a date column and detect period from data
+    const isDateCol = isDateColumnName(xCol);
+    let detectedPeriod: DatePeriod | null = null;
+    if (isDateCol && data.length > 0) {
+      // Sample a few values to detect format
+      const sample = data.slice(0, Math.min(5, data.length)).map(r => String(r[xCol]));
+      // If all samples look like month-year format, use month period
+      if (sample.every(v => /^[A-Za-z]{3}[-/]?\d{2,4}$/i.test(v.trim()))) {
+        detectedPeriod = 'month';
+      }
+    }
+    const aggregated = aggregateData(data, xCol, yCol, aggregate || 'sum', detectedPeriod, isDateCol);
     console.log(`   Aggregated data points: ${aggregated.length}`);
     
-    const result = aggregated
+    // Check if X column contains dates by:
+    // 1. Checking if column name suggests it's a date column
+    // 2. Testing a sample of values to see if they parse as dates
+    const xColLower = xCol.toLowerCase();
+    const nameSuggestsDate = /\b(date|month|week|year|time|period)\b/i.test(xColLower);
+    const sampleXValues = aggregated.slice(0, Math.min(10, aggregated.length)).map(row => String(row[xCol]));
+    const dateParseCount = sampleXValues.filter(val => parseDate(val) !== null).length;
+    const hasDates = nameSuggestsDate || (dateParseCount >= Math.min(3, sampleXValues.length * 0.5));
+    
+    let result: Record<string, any>[];
+    if (hasDates) {
+      // X-axis is dates - sort chronologically by date
+      console.log(`   X-axis contains dates (${dateParseCount}/${sampleXValues.length} samples parsed as dates), sorting chronologically`);
+      result = aggregated
+        .sort((a, b) => compareValues(a[xCol], b[xCol]))
+        .slice(0, 50); // Allow more points for time series
+    } else {
+      // X-axis is not dates - sort by Y value (descending) and take top 10
+      result = aggregated
       .sort((a, b) => toNumber(b[yCol]) - toNumber(a[yCol]))
       .slice(0, 10);
+    }
     
     console.log(`   Bar chart result: ${result.length} bars`);
     return result;
@@ -196,7 +312,18 @@ export function processChartData(
     // Sort by x and optionally aggregate
     if (aggregate && aggregate !== 'none') {
       console.log(`   Using aggregation: ${aggregate}`);
-      const aggregated = aggregateData(data, xCol, yCol, aggregate);
+      // Check if x column is a date column and detect period from data
+      const isDateCol = isDateColumnName(xCol);
+      let detectedPeriod: DatePeriod | null = null;
+      if (isDateCol && data.length > 0) {
+        // Sample a few values to detect format
+        const sample = data.slice(0, Math.min(5, data.length)).map(r => String(r[xCol]));
+        // If all samples look like month-year format, use month period
+        if (sample.every(v => /^[A-Za-z]{3}[-/]?\d{2,4}$/i.test(v.trim()))) {
+          detectedPeriod = 'month';
+        }
+      }
+      const aggregated = aggregateData(data, xCol, yCol, aggregate, detectedPeriod, isDateCol);
       console.log(`   Aggregated data points: ${aggregated.length}`);
       // Use date-aware sorting
       const result = aggregated.sort((a, b) => compareValues(a[xCol], b[xCol]));
@@ -226,24 +353,40 @@ function aggregateData(
   data: Record<string, any>[],
   groupBy: string,
   valueColumn: string,
-  aggregateType: string
+  aggregateType: string,
+  datePeriod?: DatePeriod | null,
+  isDateColumn?: boolean
 ): Record<string, any>[] {
-  console.log(`     Aggregating by "${groupBy}" with "${aggregateType}" of "${valueColumn}"`);
+  console.log(`     Aggregating by "${groupBy}" with "${aggregateType}" of "${valueColumn}"${datePeriod ? ` (period: ${datePeriod})` : ''}`);
   
-  const grouped = new Map<string, number[]>();
+  const grouped = new Map<string, { values: number[]; displayLabel?: string }>();
   let validValues = 0;
   let invalidValues = 0;
 
   for (const row of data) {
-    const key = String(row[groupBy]);
+    let key: string;
+    let displayLabel: string | undefined;
+    
+    if (isDateColumn && datePeriod) {
+      const normalized = normalizeDateToPeriod(String(row[groupBy]), datePeriod);
+      if (normalized) {
+        key = normalized.normalizedKey;
+        displayLabel = normalized.displayLabel;
+      } else {
+        key = String(row[groupBy]);
+      }
+    } else {
+      key = String(row[groupBy]);
+    }
+    
     const value = toNumber(row[valueColumn]);
 
     if (!isNaN(value)) {
       validValues++;
       if (!grouped.has(key)) {
-        grouped.set(key, []);
+        grouped.set(key, { values: [], displayLabel });
       }
-      grouped.get(key)!.push(value);
+      grouped.get(key)!.values.push(value);
     } else {
       invalidValues++;
     }
@@ -254,7 +397,7 @@ function aggregateData(
 
   const result: Record<string, any>[] = [];
 
-  for (const [key, values] of Array.from(grouped.entries())) {
+  for (const [key, { values, displayLabel }] of Array.from(grouped.entries())) {
     let aggregatedValue: number;
 
     switch (aggregateType) {
@@ -272,7 +415,7 @@ function aggregateData(
     }
 
     result.push({
-      [groupBy]: key,
+      [groupBy]: displayLabel || key,  // Use display label if available
       [valueColumn]: aggregatedValue,
     });
   }

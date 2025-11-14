@@ -121,7 +121,8 @@ export function ChartModal({
   const chartColor = COLORS[0]; // Use primary color for modal
   
   // Use filtered data if available, otherwise use original data
-  const data = enableFilters && chartData ? chartData : chartDataSource;
+  const baseData = enableFilters && Array.isArray(chartData) ? chartData : chartDataSource;
+  const data = Array.isArray(baseData) ? baseData : [];
 
   const renderChart = () => {
     switch (type) {
@@ -422,6 +423,15 @@ export function ChartModal({
                 }}
                 itemStyle={{ color: 'hsl(var(--foreground))', fontSize: '14px' }}
               />
+              <Legend 
+                verticalAlign="bottom" 
+                height={36}
+                iconType="circle"
+                wrapperStyle={{ 
+                  fontSize: '14px',
+                  color: 'hsl(var(--foreground))'
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         );
@@ -478,11 +488,11 @@ export function ChartModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl w-full max-h-[90vh] overflow-hidden [&>button]:hidden">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <DialogTitle className="text-xl">
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4 gap-4">
+          <DialogTitle className="text-xl truncate flex-1 min-w-0">
             {title}
           </DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {enableFilters && filterDefinitions.length > 0 && (
               <Popover>
                 <PopoverTrigger asChild>
@@ -505,7 +515,7 @@ export function ChartModal({
                 </PopoverTrigger>
                 <PopoverContent
                   align="end"
-                  className="w-80 space-y-4 p-4"
+                  className="w-80 max-h-[80vh] space-y-4 p-4 overflow-y-auto"
                   sideOffset={8}
                 >
                   {filterDefinitions.map((definition) => {
@@ -527,7 +537,7 @@ export function ChartModal({
                               </Button>
                             )}
                           </div>
-                          <ScrollArea className="max-h-52 pr-2">
+                          <ScrollArea className="h-52 pr-2">
                             <div className="flex flex-col gap-2">
                               {definition.options.map((option) => {
                                 const isChecked =
@@ -765,7 +775,7 @@ export function ChartModal({
               </div>
             </div>
             
-            {/* Right side - Insights and Recommendations */}
+            {/* Right side - Insights */}
             <div className="w-80 flex-shrink-0 overflow-y-auto">
               <div className="space-y-4">
                 {/* Key Insight */}
@@ -773,7 +783,7 @@ export function ChartModal({
                   <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                     <div className="flex items-start gap-3">
                       <div className="w-3 h-3 bg-blue-500 rounded-full mt-1 flex-shrink-0"></div>
-                        <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                           <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">Key Insight</h3>
                           <div 
                             className="max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400"
@@ -783,29 +793,7 @@ export function ChartModal({
                               element.scrollTop += e.deltaY;
                             }}
                           >
-                            <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed pr-2">{chart.keyInsight}</p>
-                          </div>
-                        </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Suggestion */}
-                {chart.recommendation && (
-                  <div className="bg-green-50 dark:bg-green-950/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
-                    <div className="flex items-start gap-3">
-                      <div className="w-3 h-3 bg-green-500 rounded-full mt-1 flex-shrink-0"></div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-green-900 dark:text-green-100 mb-2">Suggestion</h3>
-                          <div 
-                            className="max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400"
-                            onWheel={(e) => {
-                              e.stopPropagation();
-                              const element = e.currentTarget;
-                              element.scrollTop += e.deltaY;
-                            }}
-                          >
-                            <p className="text-sm text-green-800 dark:text-green-200 leading-relaxed pr-2">{chart.recommendation}</p>
+                          <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed break-words">{chart.keyInsight}</p>
                           </div>
                         </div>
                     </div>

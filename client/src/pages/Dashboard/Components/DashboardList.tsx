@@ -89,11 +89,11 @@ export function DashboardList({
                   </CardTitle>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>Created {dashboard.createdAt.toLocaleDateString()}</span>
+                    <span>Updated {dashboard.updatedAt.toLocaleDateString()}</span>
                   </div>
                 </div>
                 <Badge variant="secondary" className="ml-2">
-                  {dashboard.charts.length} charts
+                  {dashboard.sheets?.length || 1} sheet{(dashboard.sheets?.length || 1) === 1 ? '' : 's'}
                 </Badge>
               </div>
             </CardHeader>
@@ -101,9 +101,9 @@ export function DashboardList({
             <CardContent className="pt-0">
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  {dashboard.charts.length === 0 
-                    ? 'No charts yet' 
-                    : `${dashboard.charts.length} chart${dashboard.charts.length === 1 ? '' : 's'} saved`
+                  {dashboard.sheets && dashboard.sheets.length > 0
+                    ? `${dashboard.sheets.length} sheet${dashboard.sheets.length === 1 ? '' : 's'}`
+                    : '1 sheet'
                   }
                 </p>
                 
@@ -111,7 +111,7 @@ export function DashboardList({
                   <Button
                     onClick={() => onViewDashboard(dashboard)}
                     className="flex-1"
-                    disabled={dashboard.charts.length === 0}
+                    disabled={false}
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     View Dashboard

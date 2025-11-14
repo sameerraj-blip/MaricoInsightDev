@@ -6,6 +6,7 @@ import {
   getSessionStatisticsEndpoint,
   getSessionDetailsEndpoint,
   getSessionsByUserEndpoint,
+  updateSessionNameEndpoint,
   deleteSessionEndpoint
 } from "../controllers/sessionController.js";
 
@@ -28,6 +29,9 @@ router.get('/sessions/details/:sessionId', getSessionDetailsEndpoint);
 
 // Get sessions by user
 router.get('/sessions/user/:username', getSessionsByUserEndpoint);
+
+// Update session name by session ID
+router.patch('/sessions/:sessionId', updateSessionNameEndpoint);
 
 // Delete session by session ID
 router.delete('/sessions/:sessionId', deleteSessionEndpoint);

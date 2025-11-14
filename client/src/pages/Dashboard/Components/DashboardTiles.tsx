@@ -2,11 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardTile } from '@/pages/Dashboard/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Trash2, Edit2, Loader2 } from 'lucide-react';
 import { ChartRenderer } from '@/pages/Home/Components/ChartRenderer';
 import { Responsive, WidthProvider, Layout, Layouts } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+import { EditInsightModal } from './EditInsightModal';
+import { useToast } from '@/hooks/use-toast';
+import { useDashboardContext } from '../context/DashboardContext';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -18,6 +22,8 @@ interface DashboardTilesProps {
   onDeleteChart: (chartIndex: number) => void;
   filtersByTile: Record<string, ActiveChartFilters>;
   onTileFiltersChange: (tileId: string, filters: ActiveChartFilters) => void;
+  sheetId?: string;
+  onUpdate?: () => void;
 }
 
 const COLS = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 } as const;
@@ -36,7 +42,7 @@ type TileConfig = {
 const TILE_CONFIG: Record<DashboardTile['kind'], TileConfig> = {
   chart: { w: 6, h: 12, minW: 3, minH: 4 },
   insight: { w: 4, h: 7, minW: 2, minH: 2 },
-  action: { w: 4, h: 7, minW: 2, minH: 2 },
+  action: { w: 4, h: 7, minW: 2, minH: 2 }, // Kept for backward compatibility but no longer used
 };
 
 const ResponsiveLayoutKeys = Object.keys(COLS) as Array<keyof typeof COLS>;
@@ -179,8 +185,16 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
   onDeleteChart,
   filtersByTile,
   onTileFiltersChange,
+  sheetId,
+  onUpdate,
 }) => {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => loadHiddenTiles(dashboardId));
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ type: 'chart' | 'insight'; index: number; title: string; chartIndex?: number } | null>(null);
+  const [editingTile, setEditingTile] = useState<{ type: 'insight'; chartIndex: number; text: string } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const { toast } = useToast();
+  const { updateChartInsightOrRecommendation } = useDashboardContext();
 
   useEffect(() => {
     setHiddenIds(loadHiddenTiles(dashboardId));
@@ -237,6 +251,81 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
     });
   }, [dashboardId]);
 
+  const handleDeleteClick = useCallback((tile: DashboardTile) => {
+    if (tile.kind === 'chart') {
+      setPendingDelete({ type: 'chart', index: tile.index, title: tile.title || `Chart ${tile.index + 1}` });
+      setDeleteConfirmOpen(true);
+    } else if (tile.kind === 'insight') {
+      // For insights, just remove the insight, not the chart
+      if (tile.relatedChartId) {
+        const relatedTile = tiles.find(t => t.id === tile.relatedChartId);
+        if (relatedTile && relatedTile.kind === 'chart') {
+          setPendingDelete({ 
+            type: 'insight', 
+            index: relatedTile.index,
+            chartIndex: relatedTile.index,
+            title: tile.title || 'Key Insight'
+          });
+          setDeleteConfirmOpen(true);
+        }
+      }
+    }
+  }, [tiles]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+
+    if (pendingDelete.type === 'chart') {
+      // Delete the entire chart
+      onDeleteChart(pendingDelete.index);
+      setDeleteConfirmOpen(false);
+      setPendingDelete(null);
+    } else if (pendingDelete.type === 'insight') {
+      // Just remove the insight, not the chart
+      if (pendingDelete.chartIndex === undefined) {
+        toast({
+          title: 'Error',
+          description: 'Unable to delete: chart index not found',
+          variant: 'destructive',
+        });
+        setDeleteConfirmOpen(false);
+        setPendingDelete(null);
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        await updateChartInsightOrRecommendation(
+          dashboardId,
+          pendingDelete.chartIndex,
+          { keyInsight: '' },
+          sheetId
+        );
+        
+        toast({
+          title: 'Success',
+          description: 'Key insight deleted successfully.',
+        });
+        
+        setDeleteConfirmOpen(false);
+        setPendingDelete(null);
+        
+        // Refetch dashboards to get the updated data
+        if (onUpdate) {
+          await onUpdate();
+        }
+      } catch (error: any) {
+        toast({
+          title: 'Error',
+          description: error?.message || 'Failed to delete insight',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  }, [pendingDelete, onDeleteChart, updateChartInsightOrRecommendation, dashboardId, sheetId, onUpdate, toast]);
+
   useEffect(() => {
     persistHiddenTiles(dashboardId, hiddenIds);
   }, [dashboardId, hiddenIds]);
@@ -245,28 +334,26 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
     switch (tile.kind) {
       case 'chart':
         return (
-          <Card className="relative flex h-full flex-col overflow-hidden border border-border/60 bg-background shadow-sm transition-shadow hover:shadow-md dashboard-tile-grab-area" data-dashboard-tile="chart">
-            <CardHeader className="flex items-start justify-end pb-2 pt-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remove chart from dashboard"
-                onClick={() => onDeleteChart(tile.index)}
-              >
-                <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-              </Button>
-            </CardHeader>
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 pt-0">
-              <div>
+          <Card className="relative flex h-full flex-col overflow-hidden border border-border/60 bg-background shadow-sm transition-shadow hover:shadow-md dashboard-tile-grab-area group" data-dashboard-tile="chart">
+            <CardHeader className="flex w-full items-center justify-between pb-2 pt-3 px-4">
+            <div className="flex items-center justify-between w-full">
                 <CardTitle className="text-base text-foreground">
                   {tile.title || `Chart ${tile.index + 1}`}
                 </CardTitle>
-                {tile.metadata?.lastUpdated && (
-                  <CardDescription>
-                    Updated {tile.metadata.lastUpdated.toLocaleDateString()}
-                  </CardDescription>
-                )}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    aria-label="Remove chart from dashboard"
+                    onClick={() => handleDeleteClick(tile)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
+            </CardHeader>
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 pt-0 px-4">
               <div className="flex-1 min-h-[120px] min-w-0" data-dashboard-chart-node>
                 <ChartRenderer
                   chart={tile.chart}
@@ -283,53 +370,48 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
             </CardContent>
           </Card>
         );
-      case 'insight':
+      case 'insight': {
+        const chartIndex = tile.relatedChartId ? parseInt(tile.relatedChartId.replace('chart-', ''), 10) : -1;
         return (
-          <Card className="relative flex h-full flex-col overflow-hidden border border-primary/20 bg-primary/5 shadow-sm transition-shadow hover:shadow-md dashboard-tile-grab-area" data-dashboard-tile="insight">
-            <CardHeader className="flex items-start justify-end pb-2 pt-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remove insight tile"
-                onClick={() => handleHideTile(tile.id)}
-              >
-                <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-              </Button>
+          <Card className="relative flex h-full flex-col overflow-hidden border border-primary/20 bg-primary/5 shadow-sm transition-shadow hover:shadow-md dashboard-tile-grab-area group" data-dashboard-tile="insight">
+            <CardHeader className="flex w-full items-center justify-between pb-2 pt-3 px-4">
+              <div className="flex items-center justify-between w-full">
+                {tile.title && (
+                  <CardTitle className="text-sm font-semibold text-primary flex-1 min-w-0">{tile.title}</CardTitle>
+                )}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-primary hover:text-primary/80"
+                  aria-label="Edit insight"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (chartIndex >= 0) {
+                      setEditingTile({ type: 'insight', chartIndex, text: tile.narrative });
+                    }
+                  }}
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  aria-label="Remove insight tile"
+                  onClick={() => handleDeleteClick(tile)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              </div>
             </CardHeader>
-            <CardContent className="flex-1 overflow-auto pt-0">
-              {tile.title && (
-                <CardTitle className="mb-1 text-sm font-semibold text-primary">{tile.title}</CardTitle>
-              )}
+            <CardContent className="flex-1 overflow-auto pt-0 px-4 pb-4">
               <p className="text-sm text-foreground/90 leading-relaxed">{tile.narrative}</p>
             </CardContent>
           </Card>
         );
-      case 'action':
-        return (
-          <Card className="relative flex h-full flex-col overflow-hidden border border-emerald-200 bg-emerald-50 shadow-sm transition-shadow hover:shadow-md dashboard-tile-grab-area" data-dashboard-tile="action">
-            <CardHeader className="flex items-start justify-end pb-2 pt-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remove recommendation tile"
-                onClick={() => handleHideTile(tile.id)}
-              >
-                <Trash2 className="h-4 w-4 text-emerald-600 hover:text-destructive" />
-              </Button>
-            </CardHeader>
-            <CardContent className="flex-1 space-y-3 overflow-auto pt-0">
-              {tile.title && (
-                <CardTitle className="text-sm font-semibold text-emerald-700">{tile.title}</CardTitle>
-              )}
-              <p className="text-sm text-emerald-900 leading-relaxed">{tile.recommendation}</p>
-              {tile.impactEstimate && (
-                <div className="inline-block rounded-md border border-emerald-200 bg-emerald-100 px-2 py-1 text-xs font-medium uppercase tracking-wide text-emerald-700">
-                  Impact: {tile.impactEstimate}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        );
+      }
       default:
         return null;
     }
@@ -352,7 +434,7 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
         draggableHandle=".dashboard-tile-grab-area"
         compactType="vertical"
         preventCollision={false}
-        draggableCancel="[data-dashboard-tile='chart'] button, [data-dashboard-tile='insight'] button, [data-dashboard-tile='action'] button"
+        draggableCancel="[data-dashboard-tile='chart'] button, [data-dashboard-tile='insight'] button"
       >
         {visibleTiles.map((tile) => (
           <div key={tile.id} className="h-full w-full">
@@ -367,6 +449,81 @@ export const DashboardTiles: React.FC<DashboardTilesProps> = ({
             Restore hidden tiles
           </Button>
         </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogDescription>
+              {pendingDelete?.type === 'chart' && (
+                <>Are you sure you want to delete the chart "{pendingDelete.title}"? This will also remove its associated insights. This action cannot be undone.</>
+              )}
+              {pendingDelete?.type === 'insight' && (
+                <>Are you sure you want to delete the key insight? This will remove only the insight, and the chart will remain. This action cannot be undone.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setDeleteConfirmOpen(false);
+              setPendingDelete(null);
+            }}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Insight Modal */}
+      {editingTile && (
+        <EditInsightModal
+          isOpen={!!editingTile}
+          onClose={() => setEditingTile(null)}
+          onSave={async (text: string) => {
+            if (editingTile.chartIndex < 0) return;
+            setIsSaving(true);
+            try {
+              await updateChartInsightOrRecommendation(
+                dashboardId,
+                editingTile.chartIndex,
+                { keyInsight: text },
+                sheetId
+              );
+              setEditingTile(null);
+              toast({
+                title: 'Success',
+                description: 'Key insight updated successfully.',
+              });
+              // Refetch dashboards to get the updated data
+              if (onUpdate) {
+                await onUpdate();
+              }
+            } catch (error: any) {
+              toast({
+                title: 'Error',
+                description: error?.message || 'Failed to update insight',
+                variant: 'destructive',
+              });
+            } finally {
+              setIsSaving(false);
+            }
+          }}
+          title="Key Insight"
+          initialText={editingTile.text}
+          isLoading={isSaving}
+        />
       )}
     </div>
   );

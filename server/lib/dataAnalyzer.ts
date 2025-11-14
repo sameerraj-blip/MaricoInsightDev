@@ -23,7 +23,7 @@ export async function analyzeUpload(
   const charts = await Promise.all(chartSpecs.map(async (spec) => {
     const processedData = processChartData(data, spec);
     
-    // Generate key insight and recommendation for this specific chart
+    // Generate key insight for this specific chart
     const chartInsights = await generateChartInsights(spec, processedData, summary);
     
     return {
@@ -32,7 +32,6 @@ export async function analyzeUpload(
       yLabel: spec.y,
       data: processedData,
       keyInsight: chartInsights.keyInsight,
-      recommendation: chartInsights.recommendation,
     };
   }));
 
@@ -112,7 +111,8 @@ export async function answerQuestion(
   question: string,
   chatHistory: Message[],
   summary: DataSummary,
-  sessionId?: string
+  sessionId?: string,
+  chatInsights?: Insight[]
 ): Promise<{ answer: string; charts?: ChartSpec[]; insights?: Insight[] }> {
   // CRITICAL: This log should ALWAYS appear first
   console.log('🚀 answerQuestion() CALLED with question:', question);
@@ -154,7 +154,8 @@ export async function answerQuestion(
       chatHistory,
       data,
       summary,
-      sessionId || 'unknown'
+      sessionId || 'unknown',
+      chatInsights
     );
     
     console.log('📤 Agent system result:', { 
@@ -207,12 +208,8 @@ export async function answerQuestion(
   }
 
   const withNotes = <T extends { answer: string }>(result: T): T => {
-    if (!transformationNotes.length) return result;
-    const uniqueNotes = Array.from(new Set(transformationNotes));
-    return {
-      ...result,
-      answer: `${result.answer}\n\nFilters applied: ${uniqueNotes.join('; ')}`,
-    };
+    // Return result as-is without appending filters applied text
+    return result;
   };
 
   // Legacy implementation (existing code)
@@ -652,11 +649,11 @@ export async function answerQuestion(
       };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
     
     return withNotes({ 
       answer: `Created a scatter plot showing the correlation between ${resolvedVar1} and ${resolvedVar2}: X = ${resolvedVar1}, Y = ${resolvedVar2}.`,
-      charts: [{ ...scatterSpec, data: scatterData, keyInsight: scatterInsights.keyInsight, recommendation: scatterInsights.recommendation }]
+      charts: [{ ...scatterSpec, data: scatterData, keyInsight: scatterInsights.keyInsight }]
     });
   }
 
@@ -717,7 +714,7 @@ export async function answerQuestion(
     
     return withNotes({ 
       answer: `Created a scatter plot: X = ${resolvedVar1}, Y = ${resolvedVar2}.`,
-      charts: [{ ...scatterSpec, data: scatterData, keyInsight: scatterInsights.keyInsight, recommendation: scatterInsights.recommendation }]
+      charts: [{ ...scatterSpec, data: scatterData, keyInsight: scatterInsights.keyInsight }]
     });
   }
 
@@ -772,12 +769,11 @@ export async function answerQuestion(
       };
     }
     
-    const insights = await generateChartInsights(spec, processed, summary);
+    const insights = await generateChartInsights(spec, processed, summary, chatInsights);
     const chart: ChartSpec = { 
       ...spec, 
       data: processed, 
-      keyInsight: insights.keyInsight, 
-      recommendation: insights.recommendation 
+      keyInsight: insights.keyInsight
     };
     
     const answer = wantsDualAxis 
@@ -819,10 +815,10 @@ export async function answerQuestion(
       if (dataProcessed.length === 0) {
         return { answer: `No valid data points found for line chart using ${xTime}.` };
       }
-      const insights = await generateChartInsights(spec, dataProcessed, summary);
+      const insights = await generateChartInsights(spec, dataProcessed, summary, chatInsights);
       return withNotes({ 
         answer: `Created a dual-axis line chart: X = ${xTime}, left Y = ${against.yVar}, right Y = ${against.xVar}.`,
-        charts: [{ ...spec, data: dataProcessed, keyInsight: insights.keyInsight, recommendation: insights.recommendation }]
+        charts: [{ ...spec, data: dataProcessed, keyInsight: insights.keyInsight }]
       });
     }
 
@@ -840,10 +836,10 @@ export async function answerQuestion(
     if (scatterData.length === 0) {
       return { answer: `No valid data points found for scatter plot with X=${against.xVar}, Y=${against.yVar}.` };
     }
-    const scatterInsights = await generateChartInsights(scatter, scatterData, summary);
+    const scatterInsights = await generateChartInsights(scatter, scatterData, summary, chatInsights);
     return withNotes({ 
       answer: `Created a scatter plot: X = ${against.xVar}, Y = ${against.yVar}.`,
-      charts: [{ ...scatter, data: scatterData, keyInsight: scatterInsights.keyInsight, recommendation: scatterInsights.recommendation }]
+      charts: [{ ...scatter, data: scatterData, keyInsight: scatterInsights.keyInsight }]
     });
   }
 
@@ -911,13 +907,12 @@ export async function answerQuestion(
         };
       }
       
-      const dualAxisInsights = await generateChartInsights(dualAxisLineSpec, dualAxisLineData, summary);
+      const dualAxisInsights = await generateChartInsights(dualAxisLineSpec, dualAxisLineData, summary, chatInsights);
       
       const charts: ChartSpec[] = [{
         ...dualAxisLineSpec,
         data: dualAxisLineData,
         keyInsight: dualAxisInsights.keyInsight,
-        recommendation: dualAxisInsights.recommendation,
       }];
       
       const answer = `I've created a line chart with ${vsEarly.var1} on the left axis and ${vsEarly.var2} on the right axis, plotted over ${lineChartX}.`;
@@ -976,9 +971,9 @@ export async function answerQuestion(
       };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
-    const lineInsights1 = await generateChartInsights(lineSpec1, lineData1, summary);
-    const lineInsights2 = await generateChartInsights(lineSpec2, lineData2, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
+    const lineInsights1 = await generateChartInsights(lineSpec1, lineData1, summary, chatInsights);
+    const lineInsights2 = await generateChartInsights(lineSpec2, lineData2, summary, chatInsights);
     
     const charts: ChartSpec[] = [];
     
@@ -987,7 +982,6 @@ export async function answerQuestion(
         ...scatterSpec,
         data: scatterData,
         keyInsight: scatterInsights.keyInsight,
-        recommendation: scatterInsights.recommendation,
       });
     }
     
@@ -996,7 +990,6 @@ export async function answerQuestion(
         ...lineSpec1,
         data: lineData1,
         keyInsight: lineInsights1.keyInsight,
-        recommendation: lineInsights1.recommendation,
       });
     }
     
@@ -1005,7 +998,6 @@ export async function answerQuestion(
         ...lineSpec2,
         data: lineData2,
         keyInsight: lineInsights2.keyInsight,
-        recommendation: lineInsights2.recommendation,
       });
     }
     
@@ -1043,9 +1035,135 @@ export async function answerQuestion(
   const wantsOnlyPositive = /\b(only\s+positive|positive\s+only|just\s+positive|dont\s+include\s+negative|don't\s+include\s+negative|no\s+negative|exclude\s+negative|filter\s+positive|show\s+only\s+positive)\b/i.test(question);
   const wantsOnlyNegative = /\b(only\s+negative|negative\s+only|just\s+negative|dont\s+include\s+positive|don't\s+include\s+positive|no\s+positive|exclude\s+positive|filter\s+negative|show\s+only\s+negative)\b/i.test(question);
   const correlationFilter = wantsOnlyPositive ? 'positive' : wantsOnlyNegative ? 'negative' : 'all';
+  
+  // Detect sort order preference - only set if user explicitly requested it
+  const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low|largest\s+to\s+smallest|biggest\s+to\s+smallest\b/i.test(question);
+  const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high|smallest\s+to\s+largest|smallest\s+to\s+biggest\b/i.test(question);
+  const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined; // Only set if user explicitly requested
+
+  // CRITICAL: Detect correlation requests even when chart type is specified
+  // This handles queries like "bar plot for showing the correlation between X and Y"
+  const mentionsCorrelation = /\bcorrelation\s+(between|of|with)\b/i.test(question);
+  const allColumns = summary.columns.map(c => c.name);
+  
+  if (mentionsCorrelation) {
+    console.log('🔍 Correlation detected in query, extracting variables...');
+    
+    // Extract target variable and comparison variables from the question
+    // Pattern: "correlation between [TARGET] and [VARIABLES]"
+    const correlationMatch = question.match(/\bcorrelation\s+(between|of|with)\s+(.+?)\s+(?:and|with)\s+(.+)/i);
+    
+    if (correlationMatch && correlationMatch.length >= 4) {
+      const targetRaw = correlationMatch[2].trim();
+      const variablesRaw = correlationMatch[3].trim();
+      
+      console.log(`   Extracted target: "${targetRaw}"`);
+      console.log(`   Extracted variables: "${variablesRaw}"`);
+      
+      // Find target column
+      const targetCol = findMatchingColumn(targetRaw, allColumns);
+      
+      if (!targetCol) {
+        return {
+          answer: `I couldn't find a column matching "${targetRaw}". Available columns: ${allColumns.join(', ')}`
+        };
+      }
+      
+      const targetIsNumeric = summary.numericColumns.includes(targetCol);
+      if (!targetIsNumeric) {
+        return {
+          answer: `"${targetCol}" is not a numeric column. Correlation analysis requires numeric variables.`
+        };
+      }
+      
+      // Determine which columns to analyze
+      let comparisonColumns: string[] = [];
+      
+      // Check if user asked for "adstocked variables" or similar
+      const wantsAdstocked = /\badstocked\s+variables?\b/i.test(variablesRaw);
+      const wantsSpecificType = /\b(adstocked|reach|grp|tom)\s+variables?\b/i.test(variablesRaw);
+      
+      if (wantsAdstocked || wantsSpecificType) {
+        // Filter to only columns containing the keyword
+        const keyword = wantsAdstocked ? 'adstock' : variablesRaw.match(/\b(adstocked|reach|grp|tom)\b/i)?.[1]?.toLowerCase() || 'adstock';
+        comparisonColumns = summary.numericColumns.filter(col => 
+          col !== targetCol && 
+          col.toLowerCase().includes(keyword)
+        );
+        console.log(`   Filtered to ${keyword} columns: [${comparisonColumns.join(', ')}]`);
+      } else {
+        // Try to find specific variable mentioned
+        const specificCol = findMatchingColumn(variablesRaw, allColumns);
+        if (specificCol && summary.numericColumns.includes(specificCol)) {
+          comparisonColumns = [specificCol];
+        } else {
+          // Default: analyze all numeric columns except target
+          comparisonColumns = summary.numericColumns.filter(col => col !== targetCol);
+        }
+      }
+      
+      if (comparisonColumns.length === 0) {
+        return {
+          answer: `No matching numeric columns found for "${variablesRaw}". Available numeric columns: ${summary.numericColumns.join(', ')}`
+        };
+      }
+      
+      console.log(`   Analyzing correlation: ${targetCol} vs [${comparisonColumns.join(', ')}]`);
+      
+      // Perform correlation analysis
+      const { charts, insights } = await analyzeCorrelations(
+        workingData,
+        targetCol,
+        comparisonColumns,
+        correlationFilter,
+        sortOrder,
+        chatInsights
+      );
+      
+      // Update bar chart title to be more specific if adstocked variables were requested
+      let enrichedCharts = charts;
+      if (wantsAdstocked && Array.isArray(charts)) {
+        enrichedCharts = charts.map((c: any) => {
+          if (c.type === 'bar' && c.x === 'variable' && c.y === 'correlation') {
+            return {
+              ...c,
+              title: `Correlation Between ${targetCol} and Adstocked Variables`,
+            };
+          }
+          return c;
+        });
+      }
+      
+      // Enrich charts with insights if needed
+      try {
+        const needsEnrichment = Array.isArray(enrichedCharts) && enrichedCharts.some((c: any) => !('keyInsight' in c));
+        if (needsEnrichment) {
+          enrichedCharts = await Promise.all(
+            enrichedCharts.map(async (c: any) => {
+              const chartInsights = await generateChartInsights(c, c.data || [], summary, chatInsights);
+              return { ...c, keyInsight: c.keyInsight ?? chartInsights.keyInsight } as ChartSpec;
+            })
+          );
+        }
+      } catch (e) {
+        console.error('Failed to enrich correlation charts:', e);
+      }
+      
+      const filterNote = correlationFilter === 'positive' 
+        ? ' I\'ve filtered to show only positive correlations as requested.' 
+        : correlationFilter === 'negative' 
+        ? ' I\'ve filtered to show only negative correlations as requested.' 
+        : '';
+      
+      // Only mention sort order if user explicitly requested it
+      const sortOrderNote = sortOrder === 'descending' ? ', sorted in descending order (highest to lowest)' : sortOrder === 'ascending' ? ', sorted in ascending order (lowest to highest)' : '';
+      const answer = `I've analyzed the correlation between ${targetCol} and ${wantsAdstocked ? 'the adstocked variables' : variablesRaw}.${filterNote} The bar chart shows the correlation strength for each variable${sortOrderNote}.`;
+      
+      return withNotes({ answer, charts: enrichedCharts, insights });
+    }
+  }
 
   // Classify the question
-  const allColumns = summary.columns.map(c => c.name);
   const classification = await classifyQuestion(question, summary.numericColumns);
 
   // If it's a correlation question, use correlation analyzer
@@ -1105,11 +1223,18 @@ export async function answerQuestion(
           : targetCol; // default Y = target variable
 
         // Both numeric: Use correlation analysis
+        // Only set sort order if user explicitly requested it
+        const wantsDescending = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low\b/i.test(question);
+        const wantsAscending = /\bascending|lowest\s+to\s+highest|low\s+to\s+high\b/i.test(question);
+        const sortOrder = wantsDescending ? 'descending' : wantsAscending ? 'ascending' : undefined;
+        
         const { charts, insights } = await analyzeCorrelations(
           workingData,
           yVar,
           [xVar],
-          correlationFilter
+          correlationFilter,
+          sortOrder,
+          chatInsights
         );
         const filterNote = correlationFilter === 'positive' ? ' (showing only positive correlations)' : correlationFilter === 'negative' ? ' (showing only negative correlations)' : '';
         const answer = `I've analyzed the correlation between ${specificCol} and ${targetCol}${filterNote}. The scatter plot is oriented with X = ${xVar} and Y = ${yVar} as requested.`;
@@ -1162,23 +1287,31 @@ export async function answerQuestion(
       
       // General correlation analysis - analyze all numeric variables except the target itself
       const comparisonColumns = summary.numericColumns.filter(col => col !== targetCol);
+      
+      // Detect sort order preference for general correlation questions - only set if user explicitly requested it
+      const wantsDescendingGeneral = /\bdescending|highest\s+to\s+lowest|high\s+to\s+low|largest\s+to\s+smallest|biggest\s+to\s+smallest\b/i.test(question);
+      const wantsAscendingGeneral = /\bascending|lowest\s+to\s+highest|low\s+to\s+high|smallest\s+to\s+largest|smallest\s+to\s+biggest\b/i.test(question);
+      const sortOrderGeneral = wantsDescendingGeneral ? 'descending' : wantsAscendingGeneral ? 'ascending' : undefined; // Only set if user explicitly requested
+      
       const { charts, insights } = await analyzeCorrelations(
         workingData,
         targetCol,
         comparisonColumns,
-        correlationFilter
+        correlationFilter,
+        sortOrderGeneral,
+        chatInsights
       );
 
       // Fallback: if for any reason charts came back without per-chart insights,
-      // enrich them here so the UI always gets keyInsight and recommendation.
+      // enrich them here so the UI always gets keyInsight.
       let enrichedCharts = charts;
       try {
-        const needsEnrichment = Array.isArray(charts) && charts.some((c: any) => !('keyInsight' in c) || !('recommendation' in c));
+        const needsEnrichment = Array.isArray(charts) && charts.some((c: any) => !('keyInsight' in c));
         if (needsEnrichment) {
           enrichedCharts = await Promise.all(
             charts.map(async (c: any) => {
-              const chartInsights = await generateChartInsights(c, c.data || [], summary);
-              return { ...c, keyInsight: c.keyInsight ?? chartInsights.keyInsight, recommendation: c.recommendation ?? chartInsights.recommendation } as ChartSpec;
+              const chartInsights = await generateChartInsights(c, c.data || [], summary, chatInsights);
+              return { ...c, keyInsight: c.keyInsight ?? chartInsights.keyInsight } as ChartSpec;
             })
           );
         }
@@ -1199,7 +1332,7 @@ export async function answerQuestion(
 
   // For general questions, generate answer and optional charts
   // Pass workingData (already filtered) instead of raw data
-  return await generateGeneralAnswer(workingData, question, chatHistory, summary, sessionId, parsedQuery, transformationNotes);
+  return await generateGeneralAnswer(workingData, question, chatHistory, summary, sessionId, parsedQuery, transformationNotes, chatInsights);
 }
 
 async function generateChartSpecs(summary: DataSummary): Promise<ChartSpec[]> {
@@ -1427,20 +1560,33 @@ Output format: [{"type": "...", "title": "...", "x": "...", "y": "...", "aggrega
         }
       }
       
+      // Sanitize aggregate field to only allow valid enum values
+      let aggregate = spec.aggregate || 'none';
+      const validAggregates = ['sum', 'mean', 'count', 'none'];
+      if (!validAggregates.includes(aggregate)) {
+        console.warn(`⚠️ Invalid aggregate value "${aggregate}", defaulting to "none"`);
+        aggregate = 'none';
+      }
+
       return {
         type: spec.type,
         title: spec.title || 'Untitled Chart',
         x: x,
         y: y,
-        aggregate: spec.aggregate || 'none',
+        aggregate: aggregate,
       };
-    }).filter((spec: any) => 
-      spec && // Remove null entries (filtered pie charts)
-      spec.type && spec.x && spec.y &&
-      ['line', 'bar', 'scatter', 'pie', 'area'].includes(spec.type) &&
-      // Additional validation: pie charts should not use date columns
-      !(spec.type === 'pie' && dateColumns.includes(spec.x))
-    );
+    }).filter((spec: any) => {
+      if (!spec || !spec.type || !spec.x || !spec.y) return false;
+      if (!['line', 'bar', 'scatter', 'pie', 'area'].includes(spec.type)) return false;
+      
+      // Filter out pie charts with date columns (unless explicitly requested in generateGeneralAnswer)
+      // This function is for auto-generated charts, so we don't allow date columns for pie charts here
+      if (spec.type === 'pie' && dateColumns.includes(spec.x)) {
+        return false;
+      }
+      
+      return true;
+    });
     
     console.log('Generated charts:', sanitized.length);
     console.log(sanitized);
@@ -1559,8 +1705,8 @@ ${Object.entries(stats)
     return `${col}:
   - Range: ${formatValue(col, s.min)} to ${formatValue(col, s.max)}
   - Average: ${formatValue(col, s.avg)}
-  - Median (P50): ${formatValue(col, s.median)}
-  - Percentiles: P25=${formatValue(col, s.p25)}, P75=${formatValue(col, s.p75)}, P90=${formatValue(col, s.p90)}
+  - Median: ${formatValue(col, s.median)}
+  - 25th percentile: ${formatValue(col, s.p25)}, 75th percentile: ${formatValue(col, s.p75)}, 90th percentile: ${formatValue(col, s.p90)}
   - Total: ${formatValue(col, s.total)}
   - Standard Deviation: ${formatValue(col, s.stdDev)}
   - Coefficient of Variation: ${s.cv.toFixed(1)}% (${s.variability} variability)
@@ -1575,8 +1721,8 @@ Each insight MUST include:
 2. Specific numbers, percentages, or metrics from the statistics above (use actual percentiles, averages, top/bottom values)
 3. Explanation of WHY this matters to the business
 4. Actionable suggestion starting with "**Actionable Suggestion:**" that includes:
-   - Explicit numeric targets or thresholds (e.g., "target ${summary.numericColumns[0]} above P75 value of X", "maintain between P25-P75 range")
-   - Specific improvement goals (e.g., "increase by X%", "reduce by Y units", "achieve P90 level of Z")
+   - Explicit numeric targets or thresholds (e.g., "target ${summary.numericColumns[0]} above ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}", "maintain between ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p25 || 0)}-${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}")
+   - Specific improvement goals (e.g., "increase by X%", "reduce by Y units", "achieve ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p90 || 0)}")
    - Quantified benchmarks (e.g., "reach top 10% performance of ${topBottomStats[summary.numericColumns[0]]?.top[0]?.value.toFixed(2) || 'target'}")
    - Measurable action items with specific numbers
 
@@ -1587,11 +1733,12 @@ CRITICAL REQUIREMENTS:
 - Use ACTUAL numbers from the statistics above (percentiles, averages, top/bottom values)
 - Suggestions must be measurable and quantifiable with specific targets
 - Include specific improvement percentages or absolute values
-- Reference actual percentile values (P75, P90) as targets
+- NEVER use percentile labels like "P75", "P90", "P25", "P50", "P75 level", "P90 level", "P75 value", "P90 value" in your output
+- ONLY use the numeric values themselves (e.g., "increase to ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}" NOT "increase to P75 level (${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)})")
 - No vague language - use specific numbers like "increase to ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}" or "maintain between ${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p25 || 0)}-${formatValue(summary.numericColumns[0] || '', stats[summary.numericColumns[0] || '']?.p75 || 0)}"
 
 Example:
-**Revenue Concentration Risk:** The top 3 products account for 78% of total revenue ($2.4M out of $3.1M), indicating high dependency. Average revenue per product is $X, with top performer at $Y (P90=${stats.revenue?.p90.toFixed(2) || 'Z'}). **Why it matters:** Over-reliance on few products creates vulnerability to market shifts or competitive pressure. **Actionable Suggestion:** Diversify revenue streams by investing in product development for the remaining portfolio. Target: Increase bottom 50% products' revenue by 25% to reach P50 level (${stats.revenue?.median.toFixed(2) || 'target'}) within 12 months, aiming for 60/40 split between top and bottom performers.
+**Revenue Concentration Risk:** The top 3 products account for 78% of total revenue ($2.4M out of $3.1M), indicating high dependency. Average revenue per product is $X, with top performer at $Y. **Why it matters:** Over-reliance on few products creates vulnerability to market shifts or competitive pressure. **Actionable Suggestion:** Diversify revenue streams by investing in product development for the remaining portfolio. Target: Increase bottom 50% products' revenue by 25% to reach ${stats.revenue?.median.toFixed(2) || 'target'} within 12 months, aiming for 60/40 split between top and bottom performers.
 
 Output as JSON array:
 {
@@ -1606,7 +1753,7 @@ Output as JSON array:
     messages: [
       {
         role: 'system',
-        content: 'You are a senior business analyst. Provide detailed, quantitative insights with specific metrics and actionable suggestions. Output valid JSON.',
+        content: 'You are a senior business analyst. Provide detailed, quantitative insights with specific metrics and actionable suggestions. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level, P75 value, P90 value - only use numeric values. Output valid JSON.',
       },
       {
         role: 'user',
@@ -1711,7 +1858,8 @@ export async function generateGeneralAnswer(
   summary: DataSummary,
   sessionId?: string,
   preParsedQuery?: ParsedQuery | null,
-  preTransformationNotes?: string[]
+  preTransformationNotes?: string[],
+  chatInsights?: Insight[]
 ): Promise<{ answer: string; charts?: ChartSpec[]; insights?: Insight[] }> {
   // Detect explicit axis hints for any chart request (including secondary Y-axis)
   const parseExplicitAxes = (q: string): { x?: string; y?: string; y2?: string } => {
@@ -1795,12 +1943,8 @@ export async function generateGeneralAnswer(
   }
   
   const withNotes = <T extends { answer: string }>(result: T): T => {
-    if (!transformationNotes.length) return result;
-    const uniqueNotes = Array.from(new Set(transformationNotes));
-    return {
-      ...result,
-      answer: `${result.answer}\n\nFilters applied: ${uniqueNotes.join('; ')}`,
-    };
+    // Return result as-is without appending filters applied text
+    return result;
   };
   
   // If secondary Y-axis is requested, try to find the previous chart from chat history
@@ -1841,7 +1985,7 @@ export async function generateGeneralAnswer(
         return { answer: `No valid data points found. Please check that column "${explicitY2}" exists and contains numeric data.` };
       }
       
-      const insights = await generateChartInsights(updatedChart, chartData, summary);
+      const insights = await generateChartInsights(updatedChart, chartData, summary, chatInsights);
       
       return withNotes({
         answer: `I've added ${explicitY2} on the secondary Y-axis. The chart now shows ${previousChart.y} on the left axis and ${explicitY2} on the right axis.`,
@@ -1849,7 +1993,6 @@ export async function generateGeneralAnswer(
           ...updatedChart,
           data: chartData,
           keyInsight: insights.keyInsight,
-          recommendation: insights.recommendation,
         }],
       });
     }
@@ -1881,14 +2024,13 @@ export async function generateGeneralAnswer(
         
         const chartData = processChartData(workingData, dualAxisSpec);
         if (chartData.length > 0) {
-          const insights = await generateChartInsights(dualAxisSpec, chartData, summary);
+          const insights = await generateChartInsights(dualAxisSpec, chartData, summary, chatInsights);
           return withNotes({
             answer: `I've created a line chart with ${primaryY} on the left axis and ${explicitY2} on the right axis.`,
             charts: [{
               ...dualAxisSpec,
               data: chartData,
               keyInsight: insights.keyInsight,
-              recommendation: insights.recommendation,
             }],
           });
         }
@@ -2046,7 +2188,7 @@ export async function generateGeneralAnswer(
     
     // Store additional variables in a custom field (we'll need to extend schema later)
     // For now, we'll include them in the data and use y2Label to indicate multiple
-    const insights = await generateChartInsights(spec, enrichedData, summary);
+    const insights = await generateChartInsights(spec, enrichedData, summary, chatInsights);
     
     const answer = variablesToAdd.length === 1
       ? `I've added ${firstVariable} on the secondary Y-axis. The chart now shows ${primaryY} on the left axis and ${firstVariable} on the right axis.`
@@ -2058,7 +2200,6 @@ export async function generateGeneralAnswer(
         ...spec, 
         data: enrichedData, 
         keyInsight: insights.keyInsight, 
-        recommendation: insights.recommendation,
         // Store additional variables in a way the frontend can access
         // We'll use a custom property that won't break the schema
       } as any],
@@ -2228,12 +2369,12 @@ export async function generateGeneralAnswer(
       };
     }
     
-    const insights = await generateChartInsights(spec, processed, summary);
+    const insights = await generateChartInsights(spec, processed, summary, chatInsights);
     const answer = `I've created a line chart with ${var1} on the left axis and ${var2} on the right axis, plotted over ${xAxis}.`;
     
     return withNotes({
       answer,
-      charts: [{ ...spec, data: processed, keyInsight: insights.keyInsight, recommendation: insights.recommendation }],
+      charts: [{ ...spec, data: processed, keyInsight: insights.keyInsight }],
       insights: []
     });
   }
@@ -2375,13 +2516,12 @@ export async function generateGeneralAnswer(
       return { answer: `No valid data points found for line chart. Please check that columns "${andQuery.var1}" and "${andQuery.var2}" contain numeric data.` };
     }
     
-    const lineInsights = await generateChartInsights(lineSpec, lineData, summary);
+    const lineInsights = await generateChartInsights(lineSpec, lineData, summary, chatInsights);
     
     const charts: ChartSpec[] = [{
       ...lineSpec,
       data: lineData,
       keyInsight: lineInsights.keyInsight,
-      recommendation: lineInsights.recommendation,
     }];
     
     const answer = wantsDualAxis
@@ -2475,21 +2615,19 @@ export async function generateGeneralAnswer(
       return { answer: `No valid data points found for line chart. Please check that columns "${vsQuery.var1}" and "${vsQuery.var2}" contain numeric data.` };
     }
     
-    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary);
-    const lineInsights = await generateChartInsights(lineSpec, lineData, summary);
+    const scatterInsights = await generateChartInsights(scatterSpec, scatterData, summary, chatInsights);
+    const lineInsights = await generateChartInsights(lineSpec, lineData, summary, chatInsights);
     
     const charts: ChartSpec[] = [
       {
         ...scatterSpec,
         data: scatterData,
         keyInsight: scatterInsights.keyInsight,
-        recommendation: scatterInsights.recommendation,
       },
       {
         ...lineSpec,
         data: lineData,
         keyInsight: lineInsights.keyInsight,
-        recommendation: lineInsights.recommendation,
       },
     ];
     
@@ -2511,6 +2649,16 @@ export async function generateGeneralAnswer(
     .join('\n');
   
   const historyContext = recentHistory;
+  
+  // If we have a parsed query with aggregations, extract the aggregation column names for the AI
+  let aggregationColumnHints = '';
+  if (parsedQuery && parsedQuery.aggregations && parsedQuery.aggregations.length > 0) {
+    const aggColumns = parsedQuery.aggregations.map(agg => {
+      const columnName = agg.alias || `${agg.column}_${agg.operation}`;
+      return `- ${columnName} (from ${agg.operation}(${agg.column}))`;
+    });
+    aggregationColumnHints = `\n\nIMPORTANT - Aggregated columns created from your query:\n${aggColumns.join('\n')}\nWhen creating charts, use these column names for the Y-axis, NOT the original column names.`;
+  }
 
   // STEP 1: Detect conversational queries FIRST (before expensive RAG calls)
   // This handles greetings, casual chat, and non-data questions
@@ -2665,8 +2813,9 @@ ${historyContext ? `CONVERSATION HISTORY:\n${historyContext}\n\nIMPORTANT - Use 
 
 DATA CONTEXT:
 - ${summary.rowCount} rows, ${summary.columnCount} columns
-- All columns: ${summary.columns.map((c) => `${c.name} (${c.type})`).join(', ')}
-- Numeric columns: ${summary.numericColumns.join(', ')}
+- All columns: ${summary.columns.map((c) => `${c.name} (${c.type})`).join(', ')}${parsedQuery && parsedQuery.aggregations && parsedQuery.aggregations.length > 0 ? ', ' + parsedQuery.aggregations.map(agg => agg.alias || `${agg.column}_${agg.operation}`).join(', ') : ''}
+- Numeric columns: ${summary.numericColumns.join(', ')}${parsedQuery && parsedQuery.aggregations && parsedQuery.aggregations.length > 0 ? ', ' + parsedQuery.aggregations.map(agg => agg.alias || `${agg.column}_${agg.operation}`).join(', ') : ''}
+${aggregationColumnHints}
 ${retrievedContext}
 
 CONVERSATION STYLE - CRITICAL:
@@ -2686,6 +2835,7 @@ If the question requests a chart or visualization, generate appropriate chart sp
 CHART GUIDELINES:
 - You can use ANY column (categorical or numeric) for x or y
 - Pie charts: Use categorical column for x, numeric column for y, aggregate "sum" or "count"
+  - IMPORTANT: If user explicitly asks for pie chart "across months", "by month", or "for [variable] across [date column]", use the date column for x-axis and set aggregate to "sum"
 - Bar charts: Can use categorical or numeric for x, numeric for y
 - Line/Area: Typically numeric or date for x, numeric for y
 - Scatter: Numeric for both x and y
@@ -2751,6 +2901,11 @@ TECHNICAL RULES:
     let processedCharts: ChartSpec[] | undefined;
 
     if (result.charts && Array.isArray(result.charts)) {
+      // Check if user explicitly wants pie chart across months/dates
+      const questionLower = question.toLowerCase();
+      const wantsPieAcrossMonths = /\bpie\s+chart.*(?:across|by|for).*(?:month|date|time)\b/i.test(question) ||
+                                   /\bpie\s+chart.*(?:month|date|time).*(?:across|by|for)\b/i.test(question);
+      
       // Sanitize chart specs
       const sanitized = result.charts.map((spec: any) => {
         let x = spec.x;
@@ -2761,16 +2916,41 @@ TECHNICAL RULES:
         if (typeof x === 'object' && x !== null) x = x.name || x.value || String(x);
         if (typeof y === 'object' && y !== null) y = y.name || y.value || String(y);
         
+        // For pie charts when user explicitly asks "across months", use date column and ensure aggregation
+        if (spec.type === 'pie' && wantsPieAcrossMonths && summary.dateColumns.length > 0) {
+          const dateCol = summary.dateColumns[0] || findMatchingColumn('Month', availableColumns) || findMatchingColumn('Date', availableColumns);
+          if (dateCol) {
+            console.log(`   Pie chart requested across months - using date column "${dateCol}" for X-axis`);
+            x = dateCol;
+            // Ensure aggregate is set to 'sum' if not already specified
+            if (!spec.aggregate || spec.aggregate === 'none') {
+              spec.aggregate = 'sum';
+            }
+          }
+        }
+        
         // Apply explicit axis overrides from the question if provided
         const finalX = explicitX || String(x || '');
         const finalY = explicitY || String(y || '');
+
+        // Sanitize aggregate field to only allow valid enum values
+        let aggregate = spec.aggregate || 'none';
+        // For pie charts, default to 'sum' if not specified (especially for date-based grouping)
+        if (spec.type === 'pie' && aggregate === 'none') {
+          aggregate = 'sum';
+        }
+        const validAggregates = ['sum', 'mean', 'count', 'none'];
+        if (!validAggregates.includes(aggregate)) {
+          console.warn(`⚠️ Invalid aggregate value "${aggregate}", defaulting to "sum" for pie charts or "none" for others`);
+          aggregate = spec.type === 'pie' ? 'sum' : 'none';
+        }
 
         return {
           type: spec.type,
           title: spec.title || 'Chart',
           x: finalX,
           y: finalY,
-          aggregate: spec.aggregate || 'none',
+          aggregate: aggregate,
         };
       }).filter((spec: any) => 
         spec.type && spec.x && spec.y &&
@@ -2778,8 +2958,164 @@ TECHNICAL RULES:
       );
 
       processedCharts = await Promise.all(sanitized.map(async (spec: ChartSpec) => {
+        console.log(`🔍 Processing chart: "${spec.title}"`);
+        console.log(`   Original spec: x="${spec.x}", y="${spec.y}", aggregate="${spec.aggregate}"`);
+        console.log(`   Working data rows: ${workingData.length}`);
+        
+        // If we have aggregations in the parsed query, try to match the y-axis to aggregated columns
+        if (parsedQuery && parsedQuery.aggregations && parsedQuery.aggregations.length > 0 && workingData.length > 0) {
+          const availableColumns = Object.keys(workingData[0]);
+          console.log(`   Available columns after aggregation: [${availableColumns.join(', ')}]`);
+          
+          // Check if the x-axis column exists (should be in groupBy)
+          const xColumnExists = availableColumns.some(col => 
+            col === spec.x || col.toLowerCase() === spec.x.toLowerCase()
+          );
+          
+          if (!xColumnExists && parsedQuery.groupBy && parsedQuery.groupBy.length > 0) {
+            // Try to match x-axis to groupBy columns
+            const matchedX = parsedQuery.groupBy.find(gbCol => 
+              gbCol.toLowerCase() === spec.x.toLowerCase() ||
+              spec.x.toLowerCase().includes(gbCol.toLowerCase()) ||
+              gbCol.toLowerCase().includes(spec.x.toLowerCase())
+            );
+            
+            if (matchedX && availableColumns.includes(matchedX)) {
+              console.log(`   ✅ Matched X-axis from "${spec.x}" to "${matchedX}"`);
+              spec.x = matchedX;
+              spec.xLabel = matchedX;
+            }
+          }
+          
+          // Check if the y-axis column exists in the data (exact match or case-insensitive)
+          const yColumnExists = availableColumns.some(col => 
+            col === spec.y || col.toLowerCase() === spec.y.toLowerCase()
+          );
+          
+          console.log(`   Y-axis column "${spec.y}" exists: ${yColumnExists}`);
+          
+          // If y-axis column doesn't exist, try to find the aggregated column
+          if (!yColumnExists) {
+            console.log(`   Looking for aggregated column matching "${spec.y}"...`);
+            let foundMatch = false;
+            
+            // Normalize the spec.y for better matching (remove spaces, handle variations)
+            const normalizedSpecY = spec.y.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
+            
+            // First, try to match against aggregated columns directly
+            for (const agg of parsedQuery.aggregations) {
+              const aggColumnName = agg.alias || `${agg.column}_${agg.operation}`;
+              console.log(`   Checking aggregation: ${agg.column} -> ${aggColumnName}`);
+              
+              // Check if this aggregated column exists in available columns
+              const exactMatch = availableColumns.find(col => 
+                col === aggColumnName || col.toLowerCase() === aggColumnName.toLowerCase()
+              );
+              
+              if (exactMatch) {
+                // Normalize for comparison
+                const normalizedAggColumn = agg.column.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
+                const normalizedAggColumnName = exactMatch.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
+                
+                // Check if the original column name matches spec.y (with fuzzy matching)
+                const columnMatches = 
+                    normalizedAggColumn === normalizedSpecY ||
+                    normalizedSpecY.includes(normalizedAggColumn) ||
+                    normalizedAggColumn.includes(normalizedSpecY) ||
+                    // Also check if spec.y contains key terms from the aggregated column
+                    (normalizedSpecY.includes('adstock') && normalizedAggColumn.includes('adstock')) ||
+                    (normalizedSpecY.includes('grp') && normalizedAggColumn.includes('grp')) ||
+                    (normalizedSpecY.includes('total') && normalizedAggColumnName.includes('sum')) ||
+                    // Match if both contain same key business terms
+                    (normalizedSpecY.includes('adstock') && normalizedSpecY.includes('grp') && 
+                     normalizedAggColumn.includes('adstock') && normalizedAggColumn.includes('grp'));
+                
+                if (columnMatches) {
+                  console.log(`   ✅ Match found! Updating chart y-axis from "${spec.y}" to "${exactMatch}"`);
+                  spec.y = exactMatch;
+                  spec.yLabel = exactMatch;
+                  foundMatch = true;
+                  break;
+                }
+              }
+            }
+            
+            // If still no match, try fuzzy matching against all available columns
+            if (!foundMatch) {
+              const groupByColumns = new Set(parsedQuery.groupBy || []);
+              
+              // Extract key terms from spec.y
+              const keyTerms: string[] = [];
+              const importantTerms = ['adstock', 'grp', 'reach', 'tom', 'total', 'sum', 'pangrp', 'ngrp'];
+              for (const term of importantTerms) {
+                if (normalizedSpecY.includes(term)) {
+                  keyTerms.push(term);
+                }
+              }
+              
+              // Try to find a column that contains matching key terms
+              const fuzzyMatch = availableColumns.find(col => {
+                if (groupByColumns.has(col)) return false;
+                const normalizedCol = col.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
+                
+                // If we have key terms, check if column contains at least one matching term
+                if (keyTerms.length > 0) {
+                  return keyTerms.some(term => normalizedCol.includes(term));
+                }
+                
+                // Fallback: check if column contains any common business terms
+                return normalizedCol.includes('adstock') || normalizedCol.includes('grp') || normalizedCol.includes('sum');
+              });
+              
+              if (fuzzyMatch) {
+                console.log(`   ✅ Fuzzy match found! Updating chart y-axis from "${spec.y}" to "${fuzzyMatch}"`);
+                spec.y = fuzzyMatch;
+                spec.yLabel = fuzzyMatch;
+                foundMatch = true;
+              }
+            }
+            
+            // Final fallback: use the first aggregated column (not in groupBy)
+            if (!foundMatch && availableColumns.length > 0) {
+              const groupByColumns = new Set(parsedQuery.groupBy || []);
+              
+              // First try: find any column that matches an aggregation pattern
+              let aggregatedCol = availableColumns.find(col => {
+                if (groupByColumns.has(col)) return false;
+                // Check if it matches aggregation naming pattern (column_operation or has _sum, _mean, etc.)
+                return col.includes('_sum') || col.includes('_mean') || col.includes('_avg') || 
+                       col.includes('_count') || parsedQuery.aggregations!.some(agg => {
+                  const aggName = agg.alias || `${agg.column}_${agg.operation}`;
+                  return col === aggName || col.toLowerCase() === aggName.toLowerCase();
+                });
+              });
+              
+              // If still no match, just use the first non-groupBy column
+              if (!aggregatedCol) {
+                aggregatedCol = availableColumns.find(col => !groupByColumns.has(col));
+              }
+              
+              if (aggregatedCol) {
+                console.log(`   ⚠️ Using fallback aggregated column: "${aggregatedCol}"`);
+                spec.y = aggregatedCol;
+                spec.yLabel = aggregatedCol;
+                foundMatch = true;
+              } else {
+                console.warn(`   ❌ Could not find any aggregated column to use for y-axis`);
+                console.warn(`   Available columns: [${availableColumns.join(', ')}]`);
+                console.warn(`   GroupBy columns: [${Array.from(groupByColumns).join(', ')}]`);
+              }
+            }
+          }
+        } else if (workingData.length === 0) {
+          console.warn(`   ⚠️ No data available - chart will be empty`);
+          console.warn(`   This might mean the filter removed all rows or aggregation failed`);
+        }
+        
+        console.log(`   Final chart spec: x="${spec.x}", y="${spec.y}"`);
         const processedData = processChartData(workingData, spec);
-        const chartInsights = await generateChartInsights(spec, processedData, summary);
+        console.log(`   Processed data rows: ${processedData.length}`);
+        const chartInsights = await generateChartInsights(spec, processedData, summary, chatInsights);
         
         return {
           ...spec,
@@ -2787,7 +3123,6 @@ TECHNICAL RULES:
           yLabel: spec.y,
           data: processedData,
           keyInsight: chartInsights.keyInsight,
-          recommendation: chartInsights.recommendation,
         };
       }));
       
@@ -2827,7 +3162,6 @@ TECHNICAL RULES:
             aggregate: 'none',
             data: mergedData,
             keyInsight: c1.keyInsight,
-            recommendation: c1.recommendation,
           } as any;
           // Replace charts with single merged one
           processedCharts = [merged];
@@ -2838,14 +3172,11 @@ TECHNICAL RULES:
     // Always provide chat-level insights: prefer model's, else derive from charts
     let overallInsights = Array.isArray(result.insights) ? result.insights : undefined;
     if ((!overallInsights || overallInsights.length === 0) && Array.isArray(processedCharts) && processedCharts.length > 0) {
-      // Generate insights from both keyInsights and recommendations
+      // Generate insights from keyInsights
       overallInsights = [];
       processedCharts.forEach((c, idx) => {
         if (c.keyInsight) {
           overallInsights!.push({ id: overallInsights!.length + 1, text: c.keyInsight });
-        }
-        if (c.recommendation && c.recommendation !== c.keyInsight) {
-          overallInsights!.push({ id: overallInsights!.length + 1, text: `**Suggestion:** ${c.recommendation}` });
         }
       });
       // If still no insights, create at least one fallback
