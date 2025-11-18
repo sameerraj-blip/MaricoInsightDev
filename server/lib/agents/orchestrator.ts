@@ -131,12 +131,12 @@ export class AgentOrchestrator {
       this.emitThinkingStep(onThinkingStep, "Choosing the right analysis path", "completed", `Going with ${handlerName}`);
 
       // Step 7: Execute handler
+      // Emit handler-specific thinking step (declare outside try so it's accessible in catch)
+      const handlerTask = this.getHandlerTaskDescription(intent.type);
       try {
         // Add original question to intent for handlers that need it
         const intentWithQuestion = { ...intent, originalQuestion: enrichedQuestion };
         
-        // Emit handler-specific thinking step
-        const handlerTask = this.getHandlerTaskDescription(intent.type);
         this.emitThinkingStep(onThinkingStep, handlerTask, "active");
         
         const response = await handler.handle(intentWithQuestion, handlerContext);
