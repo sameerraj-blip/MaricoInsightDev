@@ -53,6 +53,7 @@ interface ChartRendererProps {
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const MAX_COMPACT_X_TICKS = 6;
 
 type FiltersUpdater = ActiveChartFilters | ((prev: ActiveChartFilters) => ActiveChartFilters);
 
@@ -283,6 +284,32 @@ export function ChartRenderer({
   const baseChartData = enableFilters ? filteredData : originalData;
   
   const chartData = baseChartData;
+  const shouldCompactView = type === 'bar' && !fillParent && !isSingleChart && chartData.length > MAX_COMPACT_X_TICKS;
+  const compactBarData = useMemo(() => {
+    if (!shouldCompactView) return chartData;
+    return chartData.slice(0, MAX_COMPACT_X_TICKS);
+  }, [chartData, shouldCompactView]);
+  const visibleBarData = shouldCompactView ? compactBarData : chartData;
+
+  const compactXAxisTicks = useMemo(() => {
+    if (!shouldCompactView || typeof x !== 'string') {
+      return undefined;
+    }
+
+    const values: Array<string | number> = [];
+    for (let i = 0; i < visibleBarData.length && values.length < MAX_COMPACT_X_TICKS; i += 1) {
+      const datum = visibleBarData[i] as Record<string, unknown>;
+      const rawValue = datum?.[x];
+      if (rawValue === undefined || rawValue === null) continue;
+      if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+        values.push(rawValue);
+      } else {
+        values.push(String(rawValue));
+      }
+    }
+
+    return values.length > 0 ? values : undefined;
+  }, [visibleBarData, shouldCompactView, x]);
   
   const showNoDataState = chartData.length === 0;
 
@@ -648,7 +675,7 @@ export function ChartRenderer({
       case 'bar':
         return (
           <ResponsiveContainer width="100%" height={fillParent ? '100%' : isSingleChart ? 400 : 250}>
-            <BarChart data={chartData} margin={{ left: 50, right: 10, top: 10, bottom: fillParent ? 120 : isSingleChart ? 100 : 80 }}>
+            <BarChart data={visibleBarData} margin={{ left: 50, right: 10, top: 10, bottom: fillParent ? 120 : isSingleChart ? 100 : 80 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis
                 dataKey={x}
@@ -656,6 +683,7 @@ export function ChartRenderer({
                 angle={-45}
                 textAnchor="end"
                 interval={0}
+                ticks={compactXAxisTicks}
                 label={{ value: xLabel || x, position: 'bottom', offset: 10, style: { textAnchor: 'middle', fill: 'hsl(var(--foreground))', fontSize: 12, fontWeight: 600 } }}
                 height={fillParent ? 100 : isSingleChart ? 90 : 70}
               />
@@ -877,9 +905,9 @@ export function ChartRenderer({
 
   return (
     <>
-      <div className="group relative h-full rounded-lg border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
+      <div className="group relative flex h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
         <div
-          className={`cursor-pointer ${fillParent ? 'flex h-full flex-col' : ''}`}
+          className={`cursor-pointer flex flex-col gap-3 ${fillParent ? 'h-full' : ''}`}
           onClick={handleCardClick}
         >
           {!fillParent && (
@@ -917,21 +945,23 @@ export function ChartRenderer({
             </div>
           )}
 
-          <div className={`w-full ${fillParent ? 'flex-1 min-h-0' : ''}`}>{renderChart()}</div>
+          <div className={`w-full flex-1 ${fillParent ? 'min-h-0' : ''}`}>{renderChart()}</div>
         </div>
         {showAddButton && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsDashboardModalOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add to Dashboard
-          </Button>
+          <div className="mt-3 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsDashboardModalOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add to Dashboard
+            </Button>
+          </div>
         )}
       </div>
       {useChartOnlyModal ? (
