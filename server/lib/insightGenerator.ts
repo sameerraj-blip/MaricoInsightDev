@@ -1,6 +1,19 @@
 import { ChartSpec, DataSummary, Insight } from '../../shared/schema.js';
 import { openai, MODEL } from './openai.js';
 
+const KEY_INSIGHT_MAX_CHARS = 220;
+
+const normalizeInsightText = (value: string) => (value || '').replace(/\s+/g, ' ').trim();
+const enforceInsightLimit = (value: string) => {
+  if (value.length > KEY_INSIGHT_MAX_CHARS) {
+    console.warn(`⚠️ keyInsight exceeded ${KEY_INSIGHT_MAX_CHARS} characters`, {
+      length: value.length,
+      preview: value,
+    });
+  }
+  return value;
+};
+
 export async function generateChartInsights(
   chartSpec: ChartSpec,
   chartData: Record<string, any>[],
@@ -159,7 +172,7 @@ export async function generateChartInsights(
     const trend = isNaN(r) ? '' : r > 0 ? 'positive' : 'negative';
     const strength = isNaN(r) ? '' : Math.abs(r) > 0.7 ? 'strong' : Math.abs(r) > 0.4 ? 'moderate' : 'weak';
 
-    // Concise insight (1–2 sentences) focused on chart specifics
+    // Concise insight (single sentence) focused on chart specifics
     const keyInsight = isNaN(r)
       ? `${chartSpec.y} spans ${formatY(minY)}–${formatY(maxY)} (avg ${formatY(avgY)}). Top 20% outcomes are ≥${formatY(yP80)}.`
       : `${strength} ${trend} correlation (r=${roundSmart(r)}) between ${chartSpec.x} and ${chartSpec.y}. ${chartSpec.y} ranges ${formatY(minY)}–${formatY(maxY)} (avg ${formatY(avgY)}).`;
@@ -268,10 +281,10 @@ SUGGESTION FORMAT:
     ? `\n\nRELEVANT CHAT-LEVEL INSIGHTS (use these to inform the chart insight):
 ${chatInsights.map((insight, idx) => `${idx + 1}. ${insight.text}`).join('\n')}
 
-IMPORTANT: The keyInsight should be a concise summary (1-2 sentences, ≤220 chars) that relates this specific chart to the relevant chat-level insights above. Focus on insights that mention variables in this chart (${chartSpec.x}, ${chartSpec.y}${isDualAxis ? `, ${y2Label}` : ''}).`
+IMPORTANT: The keyInsight should be a concise summary (exactly one sentence, ≤${KEY_INSIGHT_MAX_CHARS} chars) that relates this specific chart to the relevant chat-level insights above. Focus on insights that mention variables in this chart (${chartSpec.x}, ${chartSpec.y}${isDualAxis ? `, ${y2Label}` : ''}).`
     : '';
 
-  const prompt = `Return JSON with exactly one short field for this chart: keyInsight. It must be 1–2 sentences (≤220 chars), chart-specific, and include concrete numbers. No bullets.
+  const prompt = `Return JSON with exactly one short field for this chart: keyInsight. It must be one line (a single sentence, ≤${KEY_INSIGHT_MAX_CHARS} chars), chart-specific, and include concrete numbers. No bullets or line breaks.
 
 CHART CONTEXT
 - Type: ${chartSpec.type}
@@ -285,7 +298,7 @@ ${correlationContext}${chatInsightsContext}
 
 OUTPUT JSON (exact keys only):
 {
-  "keyInsight": "1–2 sentences, chart-specific with numbers${chatInsights && chatInsights.length > 0 ? ' that summarizes relevant chat insights' : ''}. NEVER use percentile labels like P75, P90, P25 - only use numeric values."
+  "keyInsight": "One sentence, chart-specific with numbers${chatInsights && chatInsights.length > 0 ? ' that summarizes relevant chat insights' : ''}. NEVER use percentile labels like P75, P90, P25 - only use numeric values. Do not exceed ${KEY_INSIGHT_MAX_CHARS} characters."
 }`;
 
   try {
@@ -294,7 +307,7 @@ OUTPUT JSON (exact keys only):
       messages: [
         {
           role: 'system',
-          content: 'You are a precise data analyst. Output JSON with exactly one short field: keyInsight. It must be 1–2 sentences (≤220 chars), chart-specific, include numbers, and be actionable. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level - only use numeric values. No bullets.'
+          content: `You are a precise data analyst. Output JSON with exactly one short field: keyInsight. It must be a single sentence (≤${KEY_INSIGHT_MAX_CHARS} chars), chart-specific, include numbers, and be actionable. NEVER use percentile labels like P75, P90, P25, P75 level, P90 level - only use numeric values. No bullets or line breaks.`
         },
         { role: 'user', content: prompt },
       ],
@@ -401,14 +414,12 @@ OUTPUT JSON (exact keys only):
         }
       }
       
-      // Build ultra-concise per-chart keyInsight (1-2 sentences)
-      const take = (s: string) => (s || '').replace(/\s+/g, ' ').trim();
-      const cap = (s: string, n = 220) => s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+      // Build ultra-concise per-chart keyInsight (single sentence)
       const first = result.insights[0] || {};
-      const title = take(first.title || 'Insight');
-      const observation = take(first.observation || first.text || '');
-
-      const conciseInsight = cap([title, observation].filter(Boolean).join(': '));
+      const title = normalizeInsightText(first.title || 'Insight');
+      const observation = normalizeInsightText(first.observation || first.text || '');
+      const combined = normalizeInsightText([title, observation].filter(Boolean).join(': '));
+      const conciseInsight = enforceInsightLimit(combined);
 
       return {
         keyInsight: conciseInsight,
@@ -416,10 +427,9 @@ OUTPUT JSON (exact keys only):
     }
 
     // Fallback to single insight format if AI didn't return array
-    const take = (s: string) => (s || '').replace(/\s+/g, ' ').trim();
-    const cap = (s: string, n = 220) => s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
+    const normalized = normalizeInsightText(result.keyInsight || "Data shows interesting patterns worth investigating");
     return {
-      keyInsight: cap(take(result.keyInsight || "Data shows interesting patterns worth investigating")),
+      keyInsight: enforceInsightLimit(normalized),
     };
   } catch (error) {
     console.error('Error generating chart insights:', error);
