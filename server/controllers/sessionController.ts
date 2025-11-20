@@ -4,7 +4,7 @@ import {
   getAllSessionsPaginated, 
   getSessionsWithFilters, 
   getSessionStatistics,
-  getChatBySessionIdEfficient,
+  getChatBySessionIdForUser,
   deleteSessionBySessionId,
   updateSessionFileName,
   ChatDocument 
@@ -32,6 +32,7 @@ export const getAllSessionsEndpoint = async (req: Request, res: Response) => {
       uploadedAt: session.uploadedAt,
       createdAt: session.createdAt,
       lastUpdatedAt: session.lastUpdatedAt,
+      collaborators: session.collaborators || [session.username],
       messageCount: session.messages.length,
       chartCount: session.charts.length,
       sessionId: session.sessionId,
@@ -85,6 +86,7 @@ export const getSessionsPaginatedEndpoint = async (req: Request, res: Response) 
       uploadedAt: session.uploadedAt,
       createdAt: session.createdAt,
       lastUpdatedAt: session.lastUpdatedAt,
+      collaborators: session.collaborators || [session.username],
       messageCount: session.messages.length,
       chartCount: session.charts.length,
       sessionId: session.sessionId,
@@ -147,6 +149,7 @@ export const getSessionsFilteredEndpoint = async (req: Request, res: Response) =
       uploadedAt: session.uploadedAt,
       createdAt: session.createdAt,
       lastUpdatedAt: session.lastUpdatedAt,
+      collaborators: session.collaborators || [session.username],
       messageCount: session.messages.length,
       chartCount: session.charts.length,
       sessionId: session.sessionId,
@@ -187,13 +190,18 @@ export const getSessionStatisticsEndpoint = async (req: Request, res: Response) 
 export const getSessionDetailsEndpoint = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const requesterEmail = req.headers['x-user-email'] || req.query.username;
     
     if (!sessionId) {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    // Get session directly from CosmosDB by session ID
-    const session = await getChatBySessionIdEfficient(sessionId);
+    if (!requesterEmail) {
+      return res.status(401).json({ error: 'Missing authenticated user email' });
+    }
+
+    // Get session directly from CosmosDB by session ID with access check
+    const session = await getChatBySessionIdForUser(sessionId, requesterEmail as string);
     
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
@@ -205,7 +213,8 @@ export const getSessionDetailsEndpoint = async (req: Request, res: Response) => 
     });
   } catch (error) {
     console.error('Get session details error:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to fetch session details',
     });
   }
@@ -230,6 +239,7 @@ export const getSessionsByUserEndpoint = async (req: Request, res: Response) => 
       uploadedAt: session.uploadedAt,
       createdAt: session.createdAt,
       lastUpdatedAt: session.lastUpdatedAt,
+      collaborators: session.collaborators || [session.username],
       messageCount: session.messages.length,
       chartCount: session.charts.length,
       sessionId: session.sessionId,

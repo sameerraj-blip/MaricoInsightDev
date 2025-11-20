@@ -7,6 +7,7 @@ import blobStorageRoutes from "./blobStorage.js";
 import sessionRoutes from "./sessions.js";
 import dataRetrievalRoutes from "./dataRetrieval.js";
 import dashboardRoutes from "./dashboards.js";
+import sharedAnalysisRoutes from "./sharedAnalyses.js";
 
 export function registerRoutes(app: Express): Server | void {
   // Register route modules
@@ -17,6 +18,7 @@ export function registerRoutes(app: Express): Server | void {
   app.use('/api', sessionRoutes);
   app.use('/api/data', dataRetrievalRoutes);
   app.use('/api', dashboardRoutes);
+  app.use('/api', sharedAnalysisRoutes);
 
   // For Vercel, we don't need to create HTTP server
   if (process.env.VERCEL) {

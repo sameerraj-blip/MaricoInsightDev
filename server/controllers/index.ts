@@ -20,3 +20,11 @@ export {
   renameDashboardController,
   updateChartInsightOrRecommendationController,
 } from './dashboardController.js';
+export {
+  shareAnalysisController,
+  getIncomingSharedAnalysesController,
+  getSentSharedAnalysesController,
+  acceptSharedAnalysisController,
+  declineSharedAnalysisController,
+  getSharedAnalysisInviteController,
+} from "./sharedAnalysisController.js";

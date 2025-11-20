@@ -102,6 +102,7 @@ export const completeAnalysisDataSchema = z.object({
   uploadedAt: z.number(),
   createdAt: z.number(),
   lastUpdatedAt: z.number(),
+  collaborators: z.array(z.string()).default([]),
   dataSummary: dataSummarySchema,
   rawData: z.array(z.record(z.union([z.string(), z.number(), z.null()]))),
   sampleRows: z.array(z.record(z.union([z.string(), z.number(), z.null()]))),
@@ -138,6 +139,7 @@ export const analysisSessionSummarySchema = z.object({
   uploadedAt: z.number(),
   createdAt: z.number(),
   lastUpdatedAt: z.number(),
+  collaborators: z.array(z.string()).default([]),
   dataSummary: dataSummarySchema,
   chartsCount: z.number(),
   insightsCount: z.number(),
@@ -151,6 +153,43 @@ export const analysisSessionSummarySchema = z.object({
 });
 
 export type AnalysisSessionSummary = z.infer<typeof analysisSessionSummarySchema>;
+
+// Shared Analyses
+export const sharedAnalysisStatusSchema = z.enum(["pending", "accepted", "declined"]);
+
+export const sharedAnalysisPreviewSchema = z.object({
+  fileName: z.string(),
+  uploadedAt: z.number(),
+  createdAt: z.number(),
+  lastUpdatedAt: z.number(),
+  chartsCount: z.number(),
+  insightsCount: z.number(),
+  messagesCount: z.number(),
+});
+
+export const sharedAnalysisInviteSchema = z.object({
+  id: z.string(),
+  sourceSessionId: z.string(),
+  sourceChatId: z.string(),
+  ownerEmail: z.string(),
+  targetEmail: z.string(),
+  status: sharedAnalysisStatusSchema,
+  createdAt: z.number(),
+  acceptedAt: z.number().optional(),
+  declinedAt: z.number().optional(),
+  note: z.string().optional(),
+  acceptedSessionId: z.string().optional(),
+  preview: sharedAnalysisPreviewSchema.optional(),
+});
+
+export type SharedAnalysisInvite = z.infer<typeof sharedAnalysisInviteSchema>;
+
+export const sharedAnalysesResponseSchema = z.object({
+  pending: z.array(sharedAnalysisInviteSchema),
+  accepted: z.array(sharedAnalysisInviteSchema),
+});
+
+export type SharedAnalysesResponse = z.infer<typeof sharedAnalysesResponseSchema>;
 
 // API Response Types
 export const uploadResponseSchema = z.object({

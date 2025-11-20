@@ -3,14 +3,14 @@ import { answerQuestion } from "../lib/dataAnalyzer.js";
 import { processChartData } from "../lib/chartGenerator.js";
 import { generateChartInsights } from "../lib/insightGenerator.js";
 import { chatResponseSchema, ThinkingStep } from "../../shared/schema.js";
-import { getChatBySessionIdEfficient, addMessageToChat, addMessagesBySessionId } from "../lib/cosmosDB.js";
+import { getChatBySessionIdForUser, addMessagesBySessionId } from "../lib/cosmosDB.js";
 import { generateAISuggestions } from '../lib/suggestionGenerator.js';
 
 export const chatWithAI = async (req: Request, res: Response) => {
   try {
     console.log('📨 chatWithAI() called');
     const { sessionId, message, chatHistory } = req.body;
-    const username = req.body.username || req.headers['x-user-email'] || 'anonymous@example.com';
+    const username = (req.body.username as string) || (req.headers['x-user-email'] as string);
 
     console.log('📥 Request body:', { sessionId, message: message?.substring(0, 50), chatHistoryLength: chatHistory?.length });
 
@@ -19,9 +19,13 @@ export const chatWithAI = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    if (!username) {
+      return res.status(401).json({ error: 'Missing authenticated user email' });
+    }
+
     // Get chat document from CosmosDB by session ID
     console.log('🔍 Fetching chat document for sessionId:', sessionId);
-    const chatDocument = await getChatBySessionIdEfficient(sessionId);
+    const chatDocument = await getChatBySessionIdForUser(sessionId, username);
 
     if (!chatDocument) {
       console.log('❌ Chat document not found');
@@ -199,7 +203,7 @@ export const chatWithAIStream = async (req: Request, res: Response) => {
   try {
     console.log('📨 chatWithAIStream() called');
     const { sessionId, message, chatHistory } = req.body;
-    const username = req.body.username || req.headers['x-user-email'] || 'anonymous@example.com';
+    const username = (req.body.username as string) || (req.headers['x-user-email'] as string);
 
     console.log('📥 Request body:', { sessionId, message: message?.substring(0, 50), chatHistoryLength: chatHistory?.length });
 
@@ -210,9 +214,15 @@ export const chatWithAIStream = async (req: Request, res: Response) => {
       return;
     }
 
+    if (!username) {
+      sendSSE(res, 'error', { message: 'Missing authenticated user email' });
+      res.end();
+      return;
+    }
+
     // Get chat document from CosmosDB by session ID
     console.log('🔍 Fetching chat document for sessionId:', sessionId);
-    const chatDocument = await getChatBySessionIdEfficient(sessionId);
+    const chatDocument = await getChatBySessionIdForUser(sessionId, username);
 
     if (!chatDocument) {
       console.log('❌ Chat document not found');

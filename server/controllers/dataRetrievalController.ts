@@ -2,8 +2,7 @@ import { Request, Response } from "express";
 import { 
   getUserChats, 
   getChatDocument, 
-  getChatBySessionIdEfficient,
-  ChatDocument 
+  getChatBySessionIdForUser,
 } from "../lib/cosmosDB.js";
 
 // Get all analysis sessions for a user
@@ -24,6 +23,7 @@ export const getUserAnalysisSessions = async (req: Request, res: Response) => {
       uploadedAt: chat.uploadedAt,
       createdAt: chat.createdAt,
       lastUpdatedAt: chat.lastUpdatedAt,
+      collaborators: chat.collaborators || [chat.username],
       dataSummary: chat.dataSummary,
       chartsCount: chat.charts.length,
       insightsCount: chat.insights?.length || 0,
@@ -39,7 +39,8 @@ export const getUserAnalysisSessions = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting user analysis sessions:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to retrieve analysis sessions'
     });
   }
@@ -68,6 +69,7 @@ export const getAnalysisData = async (req: Request, res: Response) => {
       uploadedAt: chatDocument.uploadedAt,
       createdAt: chatDocument.createdAt,
       lastUpdatedAt: chatDocument.lastUpdatedAt,
+      collaborators: chatDocument.collaborators || [chatDocument.username],
       dataSummary: chatDocument.dataSummary,
       rawData: chatDocument.rawData,
       sampleRows: chatDocument.sampleRows,
@@ -81,7 +83,8 @@ export const getAnalysisData = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting analysis data:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to retrieve analysis data'
     });
   }
@@ -91,8 +94,13 @@ export const getAnalysisData = async (req: Request, res: Response) => {
 export const getAnalysisDataBySession = async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const username = req.query.username || req.headers['x-user-email'];
     
-    const chatDocument = await getChatBySessionIdEfficient(sessionId);
+    if (!username) {
+      return res.status(401).json({ error: 'Username is required' });
+    }
+
+    const chatDocument = await getChatBySessionIdForUser(sessionId, username as string);
     
     if (!chatDocument) {
       return res.status(404).json({ error: 'Analysis data not found for this session' });
@@ -105,6 +113,7 @@ export const getAnalysisDataBySession = async (req: Request, res: Response) => {
       uploadedAt: chatDocument.uploadedAt,
       createdAt: chatDocument.createdAt,
       lastUpdatedAt: chatDocument.lastUpdatedAt,
+      collaborators: chatDocument.collaborators || [chatDocument.username],
       dataSummary: chatDocument.dataSummary,
       rawData: chatDocument.rawData,
       sampleRows: chatDocument.sampleRows,
@@ -118,7 +127,8 @@ export const getAnalysisDataBySession = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting analysis data by session:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to retrieve analysis data'
     });
   }
@@ -149,7 +159,8 @@ export const getColumnStatistics = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting column statistics:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to retrieve column statistics'
     });
   }
@@ -192,7 +203,8 @@ export const getRawData = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error getting raw data:', error);
-    res.status(500).json({
+    const statusCode = (error as any)?.statusCode || 500;
+    res.status(statusCode).json({
       error: error instanceof Error ? error.message : 'Failed to retrieve raw data'
     });
   }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi } from '@/lib/api';
 import { getUserEmail } from '@/utils/userStorage';
-import { Search, Plus, Calendar, FileText, MessageSquare, BarChart3, Loader2, Trash2, Edit2, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, Calendar, FileText, MessageSquare, BarChart3, Loader2, Trash2, Edit2, ArrowUpDown, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +35,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SharedAnalysesPanel } from './SharedAnalysesPanel';
+import { ShareAnalysisDialog } from './ShareAnalysisDialog';
+import { AnalysisSessionSummary } from '@shared/schema';
 
 interface Session {
   id: string;
@@ -46,6 +49,7 @@ interface Session {
   messageCount: number;
   chartCount: number;
   sessionId: string;
+  collaborators?: string[];
 }
 
 interface SessionsResponse {
@@ -73,6 +77,8 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
   const [editFileName, setEditFileName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [sessionToShare, setSessionToShare] = useState<Session | null>(null);
   const { toast } = useToast();
   const userEmail = getUserEmail();
   const queryClient = useQueryClient();
@@ -260,6 +266,12 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
     setEditFileName('');
   };
 
+  const handleShareClick = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    setSessionToShare(session);
+    setShareDialogOpen(true);
+  };
+
   // Handle edit confirmation
   const handleEditConfirm = async () => {
     if (!sessionToEdit || !editFileName.trim()) return;
@@ -292,6 +304,15 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
     }
   };
 
+  const handleSharedAccepted = async (summary: AnalysisSessionSummary) => {
+    await queryClient.invalidateQueries({ queryKey: ['sessions', userEmail] });
+    refetch();
+    toast({
+      title: 'Shared analysis added',
+      description: `${summary.fileName} is now part of your workspace.`,
+    });
+  };
+
   // Format date for display
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -316,6 +337,8 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
           <p className="text-gray-600">Loading your analysis history...</p>
         </div>
+
+        <SharedAnalysesPanel onAccepted={handleSharedAccepted} />
       </div>
     );
   }
@@ -353,6 +376,8 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
             New Analysis
           </Button>
         </div>
+
+        <SharedAnalysesPanel onAccepted={handleSharedAccepted} />
 
         {/* Search Bar and Sort */}
         <div className="flex gap-4 mb-6">
@@ -460,6 +485,16 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => handleShareClick(e, session)}
+                          disabled={isLoading}
+                          className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          title="Share analysis"
+                        >
+                          <Share2 className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -576,6 +611,18 @@ const Analysis: React.FC<AnalysisProps> = ({ onNavigate, onNewChat, onLoadSessio
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ShareAnalysisDialog
+        open={shareDialogOpen}
+        onOpenChange={(open) => {
+          setShareDialogOpen(open);
+          if (!open) {
+            setSessionToShare(null);
+          }
+        }}
+        sessionId={sessionToShare?.sessionId}
+        fileName={sessionToShare?.fileName}
+      />
     </div>
   );
 };

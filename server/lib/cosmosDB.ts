@@ -1,5 +1,5 @@
 import { CosmosClient, Database, Container } from "@azure/cosmos";
-import { ChartSpec, Message, DataSummary, Insight, Dashboard } from "../../shared/schema.js";
+import { ChartSpec, Message, DataSummary, Insight, Dashboard, SharedAnalysisInvite } from "../../shared/schema.js";
 
 // CosmosDB configuration
 const COSMOS_ENDPOINT = process.env.COSMOS_ENDPOINT || "";
@@ -7,6 +7,7 @@ const COSMOS_KEY = process.env.COSMOS_KEY || "";
 const COSMOS_DATABASE_ID = process.env.COSMOS_DATABASE_ID || "marico-insights";
 const COSMOS_CONTAINER_ID = process.env.COSMOS_CONTAINER_ID || "chats";
 const COSMOS_DASHBOARDS_CONTAINER_ID = process.env.COSMOS_DASHBOARDS_CONTAINER_ID || "dashboards";
+const COSMOS_SHARED_ANALYSES_CONTAINER_ID = process.env.COSMOS_SHARED_ANALYSES_CONTAINER_ID || "shared-analyses";
 
 // Initialize CosmosDB client
 const client = new CosmosClient({
@@ -17,6 +18,7 @@ const client = new CosmosClient({
 let database: Database;
 let container: Container;
 let dashboardsContainer: Container;
+let sharedAnalysesContainer: Container;
 
 // Initialize database and container
 export const initializeCosmosDB = async () => {
@@ -45,6 +47,13 @@ export const initializeCosmosDB = async () => {
     });
     dashboardsContainer = dashCont;
 
+    // Create shared analyses container if it doesn't exist
+    const { container: sharedCont } = await database.containers.createIfNotExists({
+      id: COSMOS_SHARED_ANALYSES_CONTAINER_ID,
+      partitionKey: "/targetEmail",
+    });
+    sharedAnalysesContainer = sharedCont;
+
     console.log("CosmosDB initialized successfully");
   } catch (error) {
     console.error("Failed to initialize CosmosDB:", error);
@@ -69,6 +78,24 @@ const waitForContainer = async (maxRetries: number = 10, retryDelay: number = 50
   return container;
 };
 
+const waitForSharedAnalysesContainer = async (
+  maxRetries: number = 10,
+  retryDelay: number = 500
+): Promise<Container> => {
+  let retries = 0;
+
+  while (!sharedAnalysesContainer && retries < maxRetries) {
+    await new Promise(resolve => setTimeout(resolve, retryDelay));
+    retries++;
+  }
+
+  if (!sharedAnalysesContainer) {
+    throw new Error("CosmosDB shared analyses container not initialized.");
+  }
+
+  return sharedAnalysesContainer;
+};
+
 // Chat document interface
 export interface ChatDocument {
   id: string; // Unique chat ID (fileName + timestamp)
@@ -77,6 +104,7 @@ export interface ChatDocument {
   uploadedAt: number; // Upload timestamp
   createdAt: number; // Chat creation timestamp
   lastUpdatedAt: number; // Last update timestamp
+  collaborators?: string[]; // Emails with access (always includes owner)
   dataSummary: DataSummary; // Data summary from file upload
   messages: Message[]; // Chat messages with charts and insights
   charts: ChartSpec[]; // All charts generated for this chat
@@ -97,6 +125,26 @@ export interface ChatDocument {
     analysisVersion: string; // Version of analysis algorithm
   };
 }
+
+const normalizeEmail = (value: string) => value?.trim().toLowerCase();
+
+const ensureCollaborators = (chatDocument: ChatDocument): string[] => {
+  const owner = normalizeEmail(chatDocument.username);
+  const collaborators = Array.from(
+    new Set(
+      (chatDocument.collaborators || [])
+        .map(normalizeEmail)
+        .filter((email): email is string => Boolean(email))
+    )
+  );
+
+  if (!collaborators.includes(owner)) {
+    collaborators.unshift(owner);
+  }
+
+  chatDocument.collaborators = collaborators;
+  return collaborators;
+};
 
 // Helper function to generate unique filename with number suffix
 const generateUniqueFileName = async (baseFileName: string, username: string): Promise<string> => {
@@ -148,6 +196,46 @@ const generateUniqueFileName = async (baseFileName: string, username: string): P
   }
 };
 
+const deepClone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const cloneChatDocumentForUser = async (
+  source: ChatDocument,
+  targetEmail: string
+): Promise<ChatDocument> => {
+  const containerInstance = await waitForContainer();
+  const timestamp = Date.now();
+  const clonedFileName = await generateUniqueFileName(source.fileName, targetEmail);
+  const newSessionId = `${source.sessionId}_shared_${timestamp}`;
+
+  const clonedDocument: ChatDocument & { fsmrora?: string } = {
+    id: `${clonedFileName.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}`,
+    username: targetEmail,
+    fsmrora: targetEmail,
+    fileName: clonedFileName,
+    uploadedAt: timestamp,
+    createdAt: timestamp,
+    lastUpdatedAt: timestamp,
+    dataSummary: deepClone(source.dataSummary),
+    messages: deepClone(source.messages || []),
+    charts: deepClone(source.charts || []),
+    insights: deepClone(source.insights || []),
+    sessionId: newSessionId,
+    rawData: deepClone(source.rawData || []),
+    sampleRows: deepClone(source.sampleRows || []),
+    columnStatistics: deepClone(source.columnStatistics || {}),
+    blobInfo: source.blobInfo ? { ...source.blobInfo } : undefined,
+    analysisMetadata: source.analysisMetadata ? { ...source.analysisMetadata } : {
+      totalProcessingTime: 0,
+      aiModelUsed: "gpt-4o",
+      fileSize: 0,
+      analysisVersion: "1.0.0",
+    },
+  };
+
+  const { resource } = await containerInstance.items.create(clonedDocument);
+  return resource as ChatDocument;
+};
+
 // Create a new chat document
 export const createChatDocument = async (
   username: string,
@@ -168,17 +256,18 @@ export const createChatDocument = async (
   insights: Insight[] = []
 ): Promise<ChatDocument> => {
   const timestamp = Date.now();
+  const normalizedUsername = normalizeEmail(username) || username;
   
   // Generate unique filename with number suffix if needed
-  const uniqueFileName = await generateUniqueFileName(fileName, username);
+  const uniqueFileName = await generateUniqueFileName(fileName, normalizedUsername);
   console.log(`📝 Generated unique filename: "${fileName}" -> "${uniqueFileName}"`);
   
   const chatId = `${uniqueFileName.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}`;
   
   const chatDocument: ChatDocument & { fsmrora?: string } = {
     id: chatId,
-    username,
-    fsmrora: username, // Add partition key field to match partition key path /fsmrora
+    username: normalizedUsername,
+    fsmrora: normalizedUsername, // Add partition key field to match partition key path /fsmrora
     fileName: uniqueFileName,
     uploadedAt: timestamp,
     createdAt: timestamp,
@@ -192,6 +281,7 @@ export const createChatDocument = async (
     sampleRows,
     columnStatistics,
     blobInfo,
+    collaborators: [normalizedUsername],
     analysisMetadata: analysisMetadata || {
       totalProcessingTime: 0,
       aiModelUsed: 'gpt-4o',
@@ -213,13 +303,37 @@ export const createChatDocument = async (
 };
 
 // Get chat document by ID
-export const getChatDocument = async (chatId: string, username: string): Promise<ChatDocument | null> => {
+export const getChatDocument = async (
+  chatId: string,
+  requesterEmail: string
+): Promise<ChatDocument | null> => {
   try {
-    // Wait for container to be initialized (with timeout)
     const containerInstance = await waitForContainer();
-    
-    const { resource } = await containerInstance.item(chatId, username).read();
-    return resource;
+    const { resources } = await containerInstance.items
+      .query(
+        {
+          query: "SELECT * FROM c WHERE c.id = @chatId",
+          parameters: [{ name: "@chatId", value: chatId }],
+        },
+        { enableCrossPartitionQuery: true }
+      )
+      .fetchAll();
+
+    if (!resources.length) {
+      return null;
+    }
+
+    const chatDocument = resources[0] as ChatDocument;
+    const collaborators = ensureCollaborators(chatDocument);
+    const normalizedRequester = normalizeEmail(requesterEmail);
+
+    if (!normalizedRequester || !collaborators.includes(normalizedRequester)) {
+      const error = new Error("Unauthorized to access this analysis");
+      (error as any).statusCode = 403;
+      throw error;
+    }
+
+    return chatDocument;
   } catch (error: any) {
     if (error.code === 404) {
       return null;
@@ -234,7 +348,10 @@ export const updateChatDocument = async (chatDocument: ChatDocument): Promise<Ch
   try {
     // Wait for container to be initialized (with timeout)
     const containerInstance = await waitForContainer();
-    
+    chatDocument.username = normalizeEmail(chatDocument.username) || chatDocument.username;
+    (chatDocument as any).fsmrora = chatDocument.username;
+    ensureCollaborators(chatDocument);
+
     chatDocument.lastUpdatedAt = Date.now();
     const { resource } = await containerInstance.items.upsert(chatDocument);
     console.log(`✅ Updated chat document: ${chatDocument.id}`);
@@ -322,14 +439,27 @@ export const getUserChats = async (username: string): Promise<ChatDocument[]> =>
   try {
     // Wait for container to be initialized (with timeout)
     const containerInstance = await waitForContainer();
+    const normalizedUsername = normalizeEmail(username) || username;
+
+    const query =
+      "SELECT * FROM c WHERE (ARRAY_CONTAINS(c.collaborators, @username) OR c.username = @username) ORDER BY c.createdAt DESC";
+    const { resources } = await containerInstance.items
+      .query(
+        {
+          query,
+          parameters: [{ name: "@username", value: normalizedUsername }],
+        },
+        { enableCrossPartitionQuery: true }
+      )
+      .fetchAll();
+
+    const chats = resources.map((doc) => {
+      const typed = doc as ChatDocument;
+      ensureCollaborators(typed);
+      return typed;
+    });
     
-    const query = "SELECT * FROM c WHERE c.username = @username ORDER BY c.createdAt DESC";
-    const { resources } = await containerInstance.items.query({
-      query,
-      parameters: [{ name: "@username", value: username }]
-    }).fetchAll();
-    
-    return resources;
+    return chats;
   } catch (error) {
     console.error("❌ Failed to get user chats:", error);
     throw error;
@@ -352,12 +482,33 @@ export const getChatBySessionIdEfficient = async (sessionId: string): Promise<Ch
       console.warn("⚠️ No chat document found for sessionId:", sessionId);
     } else {
       console.log("🔎 Found chat document by sessionId:", doc.id, "username:", doc.username);
+      ensureCollaborators(doc as ChatDocument);
     }
     return doc as unknown as ChatDocument | null;
   } catch (error) {
     console.error("❌ Failed to get chat by session ID:", error);
     throw error;
   }
+};
+
+export const getChatBySessionIdForUser = async (
+  sessionId: string,
+  requesterEmail: string
+): Promise<ChatDocument | null> => {
+  const chatDocument = await getChatBySessionIdEfficient(sessionId);
+  if (!chatDocument) {
+    return null;
+  }
+
+  const collaborators = ensureCollaborators(chatDocument);
+  const normalizedRequester = normalizeEmail(requesterEmail);
+  if (!normalizedRequester || !collaborators.includes(normalizedRequester)) {
+    const error = new Error("Unauthorized to access this session");
+    (error as any).statusCode = 403;
+    throw error;
+  }
+
+  return chatDocument;
 };
 
 // Delete chat document
@@ -404,6 +555,201 @@ export const updateSessionFileName = async (
     console.error("❌ Failed to update session fileName:", error);
     throw error;
   }
+};
+
+// =================== Shared Analyses ===================
+
+const buildSharedAnalysisPreview = (chatDocument: ChatDocument) => ({
+  fileName: chatDocument.fileName,
+  uploadedAt: chatDocument.uploadedAt,
+  createdAt: chatDocument.createdAt,
+  lastUpdatedAt: chatDocument.lastUpdatedAt,
+  chartsCount: chatDocument.charts?.length || 0,
+  insightsCount: chatDocument.insights?.length || 0,
+  messagesCount: chatDocument.messages?.length || 0,
+});
+
+export const createSharedAnalysisInvite = async ({
+  ownerEmail,
+  targetEmail,
+  sourceSessionId,
+  note,
+}: {
+  ownerEmail: string;
+  targetEmail: string;
+  sourceSessionId: string;
+  note?: string;
+}): Promise<SharedAnalysisInvite> => {
+  if (!ownerEmail || !targetEmail) {
+    const error = new Error("Both owner and target emails are required to share an analysis.");
+    (error as any).statusCode = 400;
+    throw error;
+  }
+
+  const normalizedOwner = normalizeEmail(ownerEmail) || ownerEmail;
+  const normalizedTarget = normalizeEmail(targetEmail) || targetEmail;
+
+  if (normalizedOwner === normalizedTarget) {
+    const error = new Error("You cannot share an analysis with yourself.");
+    (error as any).statusCode = 400;
+    throw error;
+  }
+
+  const sharedContainer = await waitForSharedAnalysesContainer();
+  const sourceChat = await getChatBySessionIdEfficient(sourceSessionId);
+
+  if (!sourceChat) {
+    throw new Error("Unable to find the source analysis to share.");
+  }
+
+  if (normalizeEmail(sourceChat.username) !== normalizedOwner) {
+    const error = new Error("You can only share analyses that you own.");
+    (error as any).statusCode = 403;
+    throw error;
+  }
+
+  const collaborators = ensureCollaborators(sourceChat);
+  if (collaborators.includes(normalizedTarget)) {
+    const error = new Error("This teammate already has access to the shared analysis.");
+    (error as any).statusCode = 409;
+    throw error;
+  }
+
+  const timestamp = Date.now();
+  const invite: SharedAnalysisInvite = {
+    id: `shared_${sourceChat.id}_${timestamp}`,
+    sourceSessionId,
+    sourceChatId: sourceChat.id,
+    ownerEmail: normalizedOwner,
+    targetEmail: normalizedTarget,
+    status: "pending",
+    createdAt: timestamp,
+    note,
+    preview: buildSharedAnalysisPreview(sourceChat),
+  };
+
+  const { resource } = await sharedContainer.items.create(invite);
+  return resource as SharedAnalysisInvite;
+};
+
+export const listSharedAnalysesForUser = async (targetEmail: string): Promise<SharedAnalysisInvite[]> => {
+  const sharedContainer = await waitForSharedAnalysesContainer();
+  const normalizedTarget = normalizeEmail(targetEmail) || targetEmail;
+  const { resources } = await sharedContainer.items.query({
+    query: "SELECT * FROM c WHERE c.targetEmail = @targetEmail ORDER BY c.createdAt DESC",
+    parameters: [{ name: "@targetEmail", value: normalizedTarget }],
+  }).fetchAll();
+
+  return resources as SharedAnalysisInvite[];
+};
+
+export const listSharedAnalysesForOwner = async (ownerEmail: string): Promise<SharedAnalysisInvite[]> => {
+  const sharedContainer = await waitForSharedAnalysesContainer();
+  const normalizedOwner = normalizeEmail(ownerEmail) || ownerEmail;
+  const { resources } = await sharedContainer.items
+    .query(
+      {
+        query: "SELECT * FROM c WHERE c.ownerEmail = @ownerEmail ORDER BY c.createdAt DESC",
+        parameters: [{ name: "@ownerEmail", value: normalizedOwner }],
+      },
+      { enableCrossPartitionQuery: true }
+    )
+    .fetchAll();
+
+  return resources as SharedAnalysisInvite[];
+};
+
+export const getSharedAnalysisInviteById = async (
+  id: string,
+  targetEmail: string
+): Promise<SharedAnalysisInvite | null> => {
+  try {
+    const sharedContainer = await waitForSharedAnalysesContainer();
+    const normalizedTarget = normalizeEmail(targetEmail) || targetEmail;
+    const { resource } = await sharedContainer.item(id, normalizedTarget).read();
+    return resource as SharedAnalysisInvite;
+  } catch (error: any) {
+    if (error.code === 404) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+export const acceptSharedAnalysisInvite = async (
+  id: string,
+  targetEmail: string
+): Promise<{ invite: SharedAnalysisInvite; newSession: ChatDocument }> => {
+  const sharedContainer = await waitForSharedAnalysesContainer();
+  const normalizedTarget = normalizeEmail(targetEmail) || targetEmail;
+  const invite = await getSharedAnalysisInviteById(id, normalizedTarget);
+
+  if (!invite) {
+    const error = new Error("Shared analysis invite not found.");
+    (error as any).statusCode = 404;
+    throw error;
+  }
+
+  if (invite.status === "declined") {
+    const error = new Error("This shared analysis invite has already been declined.");
+    (error as any).statusCode = 400;
+    throw error;
+  }
+
+  const sourceChat = await getChatBySessionIdEfficient(invite.sourceSessionId);
+  if (!sourceChat) {
+    const error = new Error("The original analysis is no longer available.");
+    (error as any).statusCode = 404;
+    throw error;
+  }
+
+  const collaborators = ensureCollaborators(sourceChat);
+  if (!collaborators.includes(normalizedTarget)) {
+    sourceChat.collaborators = [...collaborators, normalizedTarget];
+    await updateChatDocument(sourceChat);
+  }
+
+  const updatedInvite: SharedAnalysisInvite = {
+    ...invite,
+    status: "accepted",
+    acceptedAt: Date.now(),
+    acceptedSessionId: sourceChat.sessionId,
+  };
+
+  const { resource } = await sharedContainer.items.upsert(updatedInvite);
+
+  return {
+    invite: resource as SharedAnalysisInvite,
+    newSession: sourceChat,
+  };
+};
+
+export const declineSharedAnalysisInvite = async (
+  id: string,
+  targetEmail: string
+): Promise<SharedAnalysisInvite> => {
+  const sharedContainer = await waitForSharedAnalysesContainer();
+  const normalizedTarget = normalizeEmail(targetEmail) || targetEmail;
+  const invite = await getSharedAnalysisInviteById(id, normalizedTarget);
+
+  if (!invite) {
+    const error = new Error("Shared analysis invite not found.");
+    (error as any).statusCode = 404;
+    throw error;
+  }
+
+  if (invite.status !== "pending") {
+    return invite;
+  }
+
+  const updatedInvite: SharedAnalysisInvite = {
+    ...invite,
+    status: "declined",
+    declinedAt: Date.now(),
+  };
+
+  const { resource } = await sharedContainer.items.upsert(updatedInvite);
+  return resource as SharedAnalysisInvite;
 };
 
 // Delete chat document by session ID
@@ -1044,20 +1390,29 @@ export const getAllSessions = async (username?: string): Promise<ChatDocument[]>
     
     // Add username filter if provided
     if (username) {
-      query += " WHERE c.username = @username";
-      parameters.push({ name: "@username", value: username });
+      query += " WHERE (ARRAY_CONTAINS(c.collaborators, @username) OR c.username = @username)";
+      parameters.push({ name: "@username", value: normalizeEmail(username) || username });
     }
     
     query += " ORDER BY c.createdAt DESC";
     
     const queryOptions = parameters.length > 0 ? { parameters } : {};
-    const { resources } = await containerInstance.items.query({
-      query,
-      ...queryOptions,
-    }).fetchAll();
+    const { resources } = await containerInstance.items
+      .query(
+        {
+          query,
+          ...queryOptions,
+        },
+        { enableCrossPartitionQuery: true }
+      )
+      .fetchAll();
     
     console.log(`✅ Retrieved ${resources.length} sessions from CosmosDB${username ? ` for user: ${username}` : ''}`);
-    return resources;
+    return resources.map((doc) => {
+      const typed = doc as ChatDocument;
+      ensureCollaborators(typed);
+      return typed;
+    });
   } catch (error) {
     console.error("❌ Failed to get all sessions:", error);
     throw error;
@@ -1083,8 +1438,8 @@ export const getAllSessionsPaginated = async (
     
     // Add username filter if provided
     if (username) {
-      query += " WHERE c.username = @username";
-      parameters.push({ name: "@username", value: username });
+      query += " WHERE (ARRAY_CONTAINS(c.collaborators, @username) OR c.username = @username)";
+      parameters.push({ name: "@username", value: normalizeEmail(username) || username });
     }
     
     query += " ORDER BY c.createdAt DESC";
@@ -1095,14 +1450,26 @@ export const getAllSessionsPaginated = async (
       ...(parameters.length > 0 && { parameters }),
     };
     
-    const { resources, continuationToken: nextToken, hasMoreResults } = await containerInstance.items.query({
-      query,
-    }, queryOptions).fetchNext();
+    const { resources, continuationToken: nextToken, hasMoreResults } = await containerInstance.items
+      .query(
+        {
+          query,
+          parameters,
+        },
+        queryOptions
+      )
+      .fetchNext();
     
     console.log(`✅ Retrieved ${resources.length} sessions (page size: ${pageSize})${username ? ` for user: ${username}` : ''}`);
     
+    const sessions = resources.map((doc) => {
+      const typed = doc as ChatDocument;
+      ensureCollaborators(typed);
+      return typed;
+    });
+
     return {
-      sessions: resources,
+      sessions,
       continuationToken: nextToken,
       hasMoreResults: hasMoreResults || false,
     };
@@ -1131,8 +1498,8 @@ export const getSessionsWithFilters = async (options: {
     
     // Add filters based on options
     if (options.username) {
-      query += " AND c.username = @username";
-      parameters.push({ name: "@username", value: options.username });
+      query += " AND (ARRAY_CONTAINS(c.collaborators, @username) OR c.username = @username)";
+      parameters.push({ name: "@username", value: normalizeEmail(options.username) || options.username });
     }
     
     if (options.fileName) {
@@ -1162,13 +1529,22 @@ export const getSessionsWithFilters = async (options: {
     
     const queryOptions = options.limit ? { maxItemCount: options.limit } : {};
     
-    const { resources } = await containerInstance.items.query({
-      query,
-      parameters,
-    }, queryOptions).fetchAll();
+    const { resources } = await containerInstance.items
+      .query(
+        {
+          query,
+          parameters,
+        },
+        { ...queryOptions, enableCrossPartitionQuery: true }
+      )
+      .fetchAll();
     
     console.log(`✅ Retrieved ${resources.length} sessions with filters`);
-    return resources;
+    return resources.map((doc) => {
+      const typed = doc as ChatDocument;
+      ensureCollaborators(typed);
+      return typed;
+    });
   } catch (error) {
     console.error("❌ Failed to get filtered sessions:", error);
     throw error;
