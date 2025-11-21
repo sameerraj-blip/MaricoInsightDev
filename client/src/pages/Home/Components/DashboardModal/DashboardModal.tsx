@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Plus, BarChart3, X, Clock, ArrowLeft } from 'lucide-react';
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 import { useDashboardContext } from '@/pages/Dashboard/context/DashboardContext';
 import { dashboardsApi } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';

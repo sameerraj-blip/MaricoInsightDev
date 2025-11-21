@@ -1,4 +1,4 @@
-import { ThinkingStep } from '@shared/schema';
+import { ThinkingStep } from '@/shared/schema';
 import { CheckCircle2, Loader2, AlertCircle, Circle } from 'lucide-react';
 
 interface ThinkingDisplayProps {

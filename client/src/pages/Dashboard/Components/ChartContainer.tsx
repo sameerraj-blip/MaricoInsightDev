@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 import { ChartRenderer } from '@/pages/Home/Components/ChartRenderer';
 import { InsightRecommendationTile } from './InsightRecommendationTile';
 import { EditInsightModal } from './EditInsightModal';

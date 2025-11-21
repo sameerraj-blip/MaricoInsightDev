@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 
 interface useDashboardProps{
     onClose: () => void;

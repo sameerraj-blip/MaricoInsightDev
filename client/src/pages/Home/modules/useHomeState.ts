@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Message, UploadResponse } from '@shared/schema';
+import { Message, UploadResponse } from '@/shared/schema';
 
 export interface HomeState {
   sessionId: string | null;

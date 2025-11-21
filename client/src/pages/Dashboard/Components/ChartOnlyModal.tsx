@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Filter, X } from 'lucide-react';
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 import { ChartFilterDefinition, ActiveChartFilters } from '@/lib/chartFilters';
 import { format as formatDate } from 'date-fns';
 import {

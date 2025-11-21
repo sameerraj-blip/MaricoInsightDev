@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { format as formatDate } from 'date-fns';
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 import { ChartModal } from './ChartModal';
 import { ChartOnlyModal } from '@/pages/Dashboard/Components/ChartOnlyModal';
 import { DashboardModal } from './DashboardModal/DashboardModal';

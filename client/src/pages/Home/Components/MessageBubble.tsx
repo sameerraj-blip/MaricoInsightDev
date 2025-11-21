@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import { Message, ThinkingStep } from '@shared/schema';
+import { Message, ThinkingStep } from '@/shared/schema';
 import { User, Bot, Edit2, Check, X as XIcon } from 'lucide-react';
 import { ChartRenderer } from './ChartRenderer';
 import { InsightCard } from './InsightCard';

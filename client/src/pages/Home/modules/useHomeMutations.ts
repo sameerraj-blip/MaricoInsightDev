@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Message, UploadResponse, ChatResponse, ThinkingStep } from '@shared/schema';
+import { Message, UploadResponse, ChatResponse, ThinkingStep } from '@/shared/schema';
 import { uploadFile, streamChatRequest } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { getUserEmail } from '@/utils/userStorage';

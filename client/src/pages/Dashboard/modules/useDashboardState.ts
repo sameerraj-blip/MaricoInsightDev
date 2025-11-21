@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChartSpec, Dashboard as ServerDashboard, DashboardSheet } from '@shared/schema';
+import { ChartSpec, Dashboard as ServerDashboard, DashboardSheet } from '@/shared/schema';
 import { dashboardsApi } from '@/lib/api';
 
 export interface DashboardData {

@@ -1,4 +1,4 @@
-import { Insight } from '@shared/schema';
+import { Insight } from '@/shared/schema';
 import { Card } from '@/components/ui/card';
 import { Lightbulb } from 'lucide-react';
 

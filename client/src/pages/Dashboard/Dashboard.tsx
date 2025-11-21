@@ -3,8 +3,7 @@ import { useDashboardContext } from './context/DashboardContext';
 import { DashboardData } from './modules/useDashboardState';
 import { DashboardList } from './Components/DashboardList';
 import { DashboardView } from './Components/DashboardView';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { DeleteDashboardDialog } from './Components/DeleteDashboardDialog';
 
 export default function Dashboard() {
   const { 
@@ -72,9 +71,14 @@ export default function Dashboard() {
     );
   }
 
-  const dashboardToDeleteName = dashboardToDelete 
-    ? dashboards.find(d => d.id === dashboardToDelete)?.name 
+  const dashboardToDeleteName = dashboardToDelete
+    ? dashboards.find((d) => d.id === dashboardToDelete)?.name
     : null;
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+    setDashboardToDelete(null);
+  };
 
   return (
     <>
@@ -86,34 +90,13 @@ export default function Dashboard() {
         onDeleteDashboard={handleDeleteClick}
       />
 
-      {/* Delete Confirmation Modal */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Dashboard</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{dashboardToDeleteName}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteConfirmOpen(false);
-                setDashboardToDelete(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmDelete}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteDashboardDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        dashboardName={dashboardToDeleteName}
+        onConfirm={handleConfirmDelete}
+        onCancel={handleDeleteCancel}
+      />
     </>
   );
 }

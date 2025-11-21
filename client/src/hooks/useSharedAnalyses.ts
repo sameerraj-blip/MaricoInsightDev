@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AnalysisSessionSummary,
   SharedAnalysesResponse,
   SharedAnalysisInvite,
-} from "@shared/schema";
-import { sharedAnalysesApi } from "@/api/sharedAnalyses";
+} from "@/shared/schema";
+import { sharedAnalysesApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { getUserEmail } from "@/utils/userStorage";
+import { API_BASE_URL } from "@/lib/config";
+import { useEventStream } from "@/hooks/useEventStream";
 
 interface SharedAnalysesHookState {
   pending: SharedAnalysisInvite[];
@@ -26,6 +29,8 @@ export const useSharedAnalyses = () => {
     useState<SharedAnalysesHookState>(initialState);
   const [isMutating, setIsMutating] = useState(false);
   const { toast } = useToast();
+  const fallbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const loadSharedAnalyses = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -47,9 +52,108 @@ export const useSharedAnalyses = () => {
     }
   }, []);
 
-  useEffect(() => {
+  const stopFallbackPolling = useCallback(() => {
+    if (fallbackIntervalRef.current) {
+      clearInterval(fallbackIntervalRef.current);
+      fallbackIntervalRef.current = null;
+    }
+  }, []);
+
+  const startFallbackPolling = useCallback(() => {
+    console.error("❌ Max reconnect attempts reached, falling back to polling");
+    setState((prev) => ({
+      ...prev,
+      error: "Connection lost. Falling back to polling.",
+    }));
     loadSharedAnalyses();
-  }, [loadSharedAnalyses]);
+    stopFallbackPolling();
+    fallbackIntervalRef.current = setInterval(loadSharedAnalyses, 10000);
+  }, [loadSharedAnalyses, stopFallbackPolling]);
+
+  useEffect(() => {
+    const email = getUserEmail();
+    if (!email) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: "User email not found",
+      }));
+      return;
+    }
+    setUserEmail(email);
+    return () => {
+      stopFallbackPolling();
+    };
+  }, [stopFallbackPolling]);
+
+  useEffect(() => {
+    if (userEmail) {
+      loadSharedAnalyses();
+    }
+  }, [loadSharedAnalyses, userEmail]);
+
+  const sseUrl = useMemo(() => {
+    if (!userEmail) {
+      return null;
+    }
+    const params = new URLSearchParams({
+      username: userEmail,
+    });
+    return `${API_BASE_URL}/api/shared-analyses/incoming/stream?${params.toString()}`;
+  }, [userEmail]);
+
+  const handleUpdateEvent = useCallback((event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data) as SharedAnalysesResponse;
+      console.log("📥 Shared analyses update received:", data);
+      setState({
+        pending: data.pending,
+        accepted: data.accepted,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      console.error("Failed to parse SSE update data:", err);
+      setState((prev) => ({
+        ...prev,
+        error: "Failed to parse update data",
+      }));
+    }
+  }, []);
+
+  const handleMessageEvent = useCallback((event: MessageEvent) => {
+    console.log("📨 SSE message received:", event.data);
+  }, []);
+
+  const streamHandlers = useMemo(
+    () => ({
+      update: handleUpdateEvent,
+      message: handleMessageEvent,
+    }),
+    [handleMessageEvent, handleUpdateEvent]
+  );
+
+  const handleStreamError = useCallback((event: Event) => {
+    console.error("❌ SSE connection error:", event);
+    setState((prev) => ({
+      ...prev,
+      error: "Connection error",
+    }));
+  }, []);
+
+  const handleStreamOpen = useCallback(() => {
+    console.log("✅ SSE connection opened for shared analyses");
+    stopFallbackPolling();
+    setState((prev) => ({ ...prev, loading: false, error: null }));
+  }, [stopFallbackPolling]);
+
+  useEventStream({
+    url: sseUrl,
+    eventHandlers: streamHandlers,
+    onOpen: handleStreamOpen,
+    onError: handleStreamError,
+    onFallback: startFallbackPolling,
+  });
 
   const acceptInvite = useCallback(
     async (inviteId: string): Promise<AnalysisSessionSummary | null> => {

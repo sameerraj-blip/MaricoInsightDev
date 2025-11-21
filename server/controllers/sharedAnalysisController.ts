@@ -43,6 +43,16 @@ const toSessionSummary = (chatDocument: ChatDocument): AnalysisSessionSummary =>
 
 const sanitizeEmail = (value: string) => value.trim().toLowerCase();
 
+// SSE helper function (similar to chatController)
+function sendSSE(res: Response, event: string, data: any): void {
+  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  res.write(message);
+  // Force flush the response (if supported by the platform)
+  if (typeof (res as any).flush === 'function') {
+    (res as any).flush();
+  }
+}
+
 export const shareAnalysisController = async (req: Request, res: Response) => {
   try {
     const ownerEmail = getUserEmailFromRequest(req);
@@ -184,6 +194,81 @@ export const getSharedAnalysisInviteController = async (req: Request, res: Respo
     const message = error instanceof Error ? error.message : "Failed to load shared analysis invite.";
     const statusCode = (error as any)?.statusCode || 500;
     res.status(statusCode).json({ error: message });
+  }
+};
+
+/**
+ * Streaming shared analyses endpoint using Server-Sent Events (SSE)
+ * Provides real-time updates for incoming shared analysis invites
+ */
+export const streamIncomingSharedAnalysesController = async (req: Request, res: Response) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for nginx
+
+  try {
+    const userEmail = getUserEmailFromRequest(req);
+    if (!userEmail) {
+      sendSSE(res, 'error', { message: 'Missing authenticated user email.' });
+      res.end();
+      return;
+    }
+
+
+    // Function to fetch and send shared analyses
+    const sendSharedAnalyses = async () => {
+      try {
+        const invitations = await listSharedAnalysesForUser(userEmail);
+        const responsePayload = {
+          pending: invitations.filter((invite) => invite.status === "pending"),
+          accepted: invitations.filter((invite) => invite.status === "accepted"),
+        };
+
+        // Validate payload before sending
+        sharedAnalysesResponseSchema.parse(responsePayload);
+        sendSSE(res, 'update', responsePayload);
+      } catch (error) {
+        console.error('Error fetching shared analyses for SSE:', error);
+        sendSSE(res, 'error', { 
+          message: error instanceof Error ? error.message : 'Failed to fetch shared analyses.' 
+        });
+      }
+    };
+
+    // Send initial data immediately
+    await sendSharedAnalyses();
+
+    // Set up polling to check for new invites every 3 seconds
+    const checkInterval = setInterval(async () => {
+      // Check if connection is still open
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(checkInterval);
+        return;
+      }
+
+      await sendSharedAnalyses();
+    }, 3000); // Check every 3 seconds
+
+    // Clean up on client disconnect
+    req.on('close', () => {
+      clearInterval(checkInterval);
+      res.end();
+    });
+
+    // Handle errors
+    req.on('error', (error) => {
+      console.error('SSE connection error:', error);
+      clearInterval(checkInterval);
+      res.end();
+    });
+
+  } catch (error) {
+    console.error("streamIncomingSharedAnalysesController error:", error);
+    const message = error instanceof Error ? error.message : "Failed to stream shared analyses.";
+    sendSSE(res, 'error', { message });
+    res.end();
   }
 };
 

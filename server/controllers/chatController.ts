@@ -3,7 +3,7 @@ import { answerQuestion } from "../lib/dataAnalyzer.js";
 import { processChartData } from "../lib/chartGenerator.js";
 import { generateChartInsights } from "../lib/insightGenerator.js";
 import { chatResponseSchema, ThinkingStep } from "../../shared/schema.js";
-import { getChatBySessionIdForUser, addMessagesBySessionId } from "../lib/cosmosDB.js";
+import { getChatBySessionIdForUser, addMessagesBySessionId, getChatBySessionIdEfficient } from "../lib/cosmosDB.js";
 import { generateAISuggestions } from '../lib/suggestionGenerator.js';
 
 export const chatWithAI = async (req: Request, res: Response) => {
@@ -373,6 +373,118 @@ export const chatWithAIStream = async (req: Request, res: Response) => {
     console.error('Chat stream error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to process message';
     sendSSE(res, 'error', { message: errorMessage });
+    res.end();
+  }
+};
+
+/**
+ * Streaming chat messages endpoint using Server-Sent Events (SSE)
+ * Provides real-time updates for chat messages in a session
+ */
+export const streamChatMessagesController = async (req: Request, res: Response) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  try {
+    const { sessionId } = req.params;
+    // EventSource doesn't support custom headers, so get email from query parameter
+    const queryEmail = req.query.username;
+    const headerEmail = req.headers['x-user-email'];
+    
+    let username: string | undefined;
+    if (typeof queryEmail === "string" && queryEmail.trim().length > 0) {
+      username = queryEmail.trim().toLowerCase();
+    } else if (typeof headerEmail === "string" && headerEmail.trim().length > 0) {
+      username = headerEmail.trim().toLowerCase();
+    }
+
+    if (!sessionId) {
+      sendSSE(res, 'error', { message: 'Session ID is required' });
+      res.end();
+      return;
+    }
+
+    if (!username) {
+      sendSSE(res, 'error', { message: 'Missing authenticated user email' });
+      res.end();
+      return;
+    }
+
+    // Verify user has access to this session
+    const chatDocument = await getChatBySessionIdForUser(sessionId, username);
+    if (!chatDocument) {
+      sendSSE(res, 'error', { message: 'Session not found or unauthorized' });
+      res.end();
+      return;
+    }
+
+    let lastMessageCount = chatDocument.messages?.length || 0;
+
+    // Function to fetch and send new messages
+    const sendMessageUpdate = async () => {
+      try {
+        const currentChat = await getChatBySessionIdEfficient(sessionId);
+        if (!currentChat) {
+          return;
+        }
+
+        const currentMessageCount = currentChat.messages?.length || 0;
+        
+        // Only send update if message count changed
+        if (currentMessageCount !== lastMessageCount) {
+          const newMessages = currentChat.messages?.slice(lastMessageCount) || [];
+          lastMessageCount = currentMessageCount;
+          
+          sendSSE(res, 'messages', {
+            messages: newMessages,
+            totalCount: currentMessageCount,
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching chat messages for SSE:', error);
+        sendSSE(res, 'error', { 
+          message: error instanceof Error ? error.message : 'Failed to fetch messages.' 
+        });
+      }
+    };
+
+    // Send initial message count
+    sendSSE(res, 'init', {
+      messageCount: lastMessageCount,
+      messages: chatDocument.messages || [],
+    });
+
+    // Set up polling to check for new messages every 2 seconds
+    const checkInterval = setInterval(async () => {
+      // Check if connection is still open
+      if (res.writableEnded || res.destroyed) {
+        clearInterval(checkInterval);
+        return;
+      }
+
+      await sendMessageUpdate();
+    }, 2000); // Check every 2 seconds
+
+    // Clean up on client disconnect
+    req.on('close', () => {
+      clearInterval(checkInterval);
+      res.end();
+    });
+
+    // Handle errors
+    req.on('error', (error) => {
+      console.error('SSE connection error:', error);
+      clearInterval(checkInterval);
+      res.end();
+    });
+
+  } catch (error) {
+    console.error("streamChatMessagesController error:", error);
+    const message = error instanceof Error ? error.message : "Failed to stream chat messages.";
+    sendSSE(res, 'error', { message });
     res.end();
   }
 };

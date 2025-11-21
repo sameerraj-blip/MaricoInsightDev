@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { sharedAnalysesApi } from "@/api/sharedAnalyses";
+import { sharedAnalysesApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
 interface ShareAnalysisDialogProps {

@@ -12,7 +12,7 @@ import {
   CompleteAnalysisData, 
   ColumnStatisticsResponse,
   RawDataResponse 
-} from '@shared/schema';
+} from '@/shared/schema';
 
 interface AnalysisHistoryProps {
   onLoadAnalysis?: (analysisData: CompleteAnalysisData) => void;

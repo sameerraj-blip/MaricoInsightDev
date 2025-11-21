@@ -1,4 +1,4 @@
-import { Message } from '@shared/schema';
+import { Message } from '@/shared/schema';
 
 interface UseHomeHandlersProps {
   sessionId: string | null;

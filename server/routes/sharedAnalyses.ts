@@ -6,12 +6,14 @@ import {
   getSentSharedAnalysesController,
   getSharedAnalysisInviteController,
   shareAnalysisController,
+  streamIncomingSharedAnalysesController,
 } from "../controllers/sharedAnalysisController.js";
 
 const router = Router();
 
 router.post("/shared-analyses", shareAnalysisController);
 router.get("/shared-analyses/incoming", getIncomingSharedAnalysesController);
+router.get("/shared-analyses/incoming/stream", streamIncomingSharedAnalysesController);
 router.get("/shared-analyses/sent", getSentSharedAnalysesController);
 router.get("/shared-analyses/:inviteId", getSharedAnalysisInviteController);
 router.post("/shared-analyses/:inviteId/accept", acceptSharedAnalysisController);

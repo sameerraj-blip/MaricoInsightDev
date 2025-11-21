@@ -1,4 +1,4 @@
-import { ChartSpec } from '@shared/schema';
+import { ChartSpec } from '@/shared/schema';
 
 export type DashboardTile =
   | DashboardChartTile

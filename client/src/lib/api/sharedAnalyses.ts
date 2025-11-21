@@ -1,9 +1,9 @@
+import { api } from "@/lib/httpClient";
 import {
   AnalysisSessionSummary,
   SharedAnalysesResponse,
   SharedAnalysisInvite,
-} from "@shared/schema";
-import { api } from "@/lib/api";
+} from "@/shared/schema";
 
 export const sharedAnalysesApi = {
   share: (payload: { sessionId: string; targetEmail: string; note?: string }) =>
@@ -27,4 +27,5 @@ export const sharedAnalysesApi = {
       `/api/shared-analyses/${inviteId}/decline`
     ),
 };
+
 
